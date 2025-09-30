@@ -1,0 +1,219 @@
+
+// cron.schedule("*/2 * * * *", async () => {
+  //     try {
+  //         console.log(" Running cron job to convert string _id to ObjectId...");
+  
+  //         // Step 1: Find all documents where `_id` is stored as a string
+  //         const docs = await leaveTakenHistoryModel.find({ _id: { $type: "string" } });
+  
+  //         if (docs.length === 0) {
+  //             console.log(" No documents found with string _id.");
+  //             return;
+  //         }
+  
+  //         console.log(` Found ${docs.length} documents with string _id.`);
+  
+  //         // Step 2: Convert documents and prepare for re-insertion
+  //         const convertedDocs = docs.map(doc => {
+  //             return {
+  //                 ...doc.toObject(), // Convert Mongoose doc to plain object
+  //                 _id: new mongoose.Types.ObjectId(doc._id), // Convert `_id` to ObjectId
+  //                 createdAt: new Date(doc.createdAt), // Keep original createdAt
+  //                 updatedAt: new Date(doc.updatedAt), // Keep original updatedAt
+  //             };
+  //         });
+  
+  //         // Step 3: Delete old documents with string `_id`
+  //         const deleteResult = await leaveTakenHistoryModel.deleteMany({ _id: { $in: docs.map(doc => doc._id) } });
+  //         console.log(` Deleted ${deleteResult.deletedCount} documents with string _id.`);
+  
+  //         // Step 4: Re-insert the documents with the converted `_id`
+  //         const insertResult = await leaveTakenHistoryModel.insertMany(convertedDocs);
+  //         console.log(` Successfully inserted ${insertResult.length} documents with ObjectId _id.`);
+  
+  //         console.log(" Cron job completed successfully.");
+  //     } catch (error) {
+  //         console.error(" Error during cron job execution:", error);
+  //     }
+  // });
+  
+  // function removeDuplicatesFromArr(arr) {
+  //     return [...new Set(arr)];
+  // }
+  
+  // console.log(removeDuplicatesFromArr([2,3,4,6,3,2,5,734,3,45]))
+  
+  // function removeDuplicatesFromArr(arr) {
+  //     return arr.filter((value, index) => arr.indexOf(value) === index);
+  // }
+  
+  // console.log(removeDuplicatesFromArr([1,3,4,5,7,3,1,4,6,8,2,4]).sort())
+  
+  
+  // function removeDuplicatesFromArr(arr) {
+  //     let result = [];
+  
+  //     for (let i = 0; i < arr.length; i++) {
+  //         let isDuplicate = false;
+  
+  //         for (let j = 0; j < result.length; j++) {
+  //             if(arr[i] === result[j]) {
+  //                 isDuplicate = true;
+  //                 break;
+  //             }
+  //         }
+  
+  //         if(!isDuplicate) {
+  //             result.push(arr[i]);
+  //         }
+  //     }
+  //     return result;
+  // }
+  
+  // console.log(removeDuplicatesFromArr([2,3,5,2,4,5,7,3,5,6]))
+  
+  
+  // function findMissingNum(arr) {
+  //     let n = arr.length+1;
+  //     let expectedSum = (n*(n+1)/2);
+  //     let actualSum = 0;
+      
+  //     for(let i = 0; i < arr.length; i++) {
+  //         actualSum = actualSum+arr[i];
+  //     }
+  //     return expectedSum - actualSum;
+  // }
+  
+  // console.log(findMissingNum([1,2,3,4,5,6,7,8,9]))
+  
+  // // linear time complexity O(n)
+  
+  // function flattenAnArray(arr) {
+  //     let result = [];
+  
+  //     for (let i = 0; i < arr.length; i++) {
+  //         if (Array.isArray(arr[i])) {
+  //             result = result.concat(flattenAnArray(arr[i]));
+  //         } else {
+  //             result.push(arr[i]);
+  //         }
+  //     }
+  //     return result;
+  // }
+  
+  // console.log(flattenAnArray([1,[23],[45, [41]]]))
+  
+  
+  // function rotateArray(arr, k) {
+  //     let n = arr.length;
+  //     k = k % n;
+  
+  //     function rev(start, end) {
+  //         while(start < end) {
+  //             [arr[start], arr[end]] = [arr[end], arr[start]];
+  //             start++;
+  //             end--;
+  //         }
+  //     }
+  //     rev(0, n-1);
+  //     rev(0, k-1);
+  //     rev(k, n-1);
+  //     return arr;
+  // }
+  
+  // console.log(rotateArray([1,2,3,4,5,6,7], 2))
+  
+  // O(n)  most space-efficient solution
+  
+  // find common elem of arr1 arr2
+  // function findCommonElem(arr1, arr2) {
+  //     arr1.sort((a,b) => a-b);
+  //     arr2.sort((a,b) => a-b);
+  
+  //     let i = 0;
+  //     let j = 0;
+  //     let result = [];
+  
+  //     while(i < arr1.length && j < arr2.length) {
+  //         if (arr1[i] === arr2[j]) {
+  //             result.push(arr1[i]);
+  //             i++;
+  //             j++;
+  //         } else if (arr1[i] < arr2[j]) {
+  //             i++;
+  //         } else {
+  //             j++;
+  //         }
+  //     }
+  //     return result;
+  // }
+  
+  // console.log(findCommonElem([1,2,3,4,5,6,4,4,4,4,4],[3,4,4,5,6,7,8,9]))
+  
+  // // union of two arrays
+  // function unionOfArrays(arr1, arr2) {
+  //     arr1.sort((a,b) => a-b);
+  //     arr2.sort((a,b) => a-b);
+  
+  //     let i, j = 0;
+  //     let result = [];
+  
+  //     while(i < arr1.length && j < arr2.length) {
+  //         if(arr1[i] < arr2[j]) {
+  //             result.push(arr1[i]);
+  //             i++;
+  //         } else if (arr1[i] > arr2[j]) {
+  //             result.push(arr2[j])
+  //             j++;
+  //         } else {
+  //            result.push(arr1[i]);
+  //            i++;
+  //            j++;
+  //         } 
+  //     }
+  //     return result;
+  // }
+  
+  // console.log(unionOfArrays([1,2,3,4,5],[3,4,5,6,7]))
+
+  
+// union of two arrays
+// function unionOfArrays(arr1, arr2) {
+//     arr1.sort((a,b) => a-b);
+//     arr2.sort((a,b) => a-b);
+
+//     let i, j = 0;
+//     let result = [];
+
+//     while(i < arr1.length && j < arr2.length) {
+//         if(arr1[i] < arr2[j]) {
+//             result.push(arr1[i]);
+//             i++;
+//         } else if (arr1[i] > arr2[j]) {
+//             result.push(arr2[j])
+//             j++;
+//         } else {
+//            result.push(arr1[i]);
+//            i++;
+//            j++;
+//         } 
+//     }
+//     // return result;
+//     while(i < arr1.length) result.push(arr1[i++]);
+//     while(j < arr2.length) result.push(arr2[j++]);
+
+//     return result;
+// }
+
+// console.log(unionOfArrays([1,2,3,4,5],[3,4,5,6,7]))
+
+// check given string are anagrams or not
+
+// function checkStrAnagrams(str1, str2) {
+//     if (str1.length !== str2.length) return false;
+
+    
+//     return str1.split("").sort().join("") === str2.split("").sort().join("")
+// }
+
+// console.log(checkStrAnagrams("lml","mll"))
