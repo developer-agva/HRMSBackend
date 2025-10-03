@@ -15,8 +15,10 @@ const {
     createEmployeeSalary,
     getAllEmployeeSalaries,
     getAllPunchRecordsForOutDuty,
+    getAllOutDutyRecords,
     updateLocation,
-    saveEmpLocation
+    saveEmpLocation,
+    recalculateDuration
 } = require('../controllers/mainController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
@@ -56,7 +58,9 @@ router.post('/punch-out/:id', punchOutForOutDuty);
 router.put('/update-location/:id', updateLocation);
 router.get('/get-log-records/:employeeId', getAttendanceLogForOutDutyById);
 router.get('/get-all-punch-records/:employeeId', getAllPunchRecordsForOutDuty);
+router.get('/get-all-out-duty-records', authMiddleware, getAllOutDutyRecords);
 router.post('/save-emp-location', saveEmpLocation);
+router.post('/recalculate-duration/:id', recalculateDuration);
 
 
 

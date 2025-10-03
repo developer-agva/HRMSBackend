@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const attendanceLogSchema = new mongoose.Schema({
     employeeId: { type: String, required: true },
     // description: { type: String, required: true },
-    AttendanceDate: { type: Date, required: true },
+    AttendanceDate: { type: String, required: true },
     location: { type: String, default: "" },
     InTime: { type: String, default: ""},
     OutTime: { type: String, default: "" },
@@ -12,10 +12,12 @@ const attendanceLogSchema = new mongoose.Schema({
     imageUrl: { type: String, default: "" },
     Status: { type: String, default: "Present " },
     Duration: { type: String, default: "" },
-    createdAt: { type: Date, default: Date.now }, 
-    updatedAt: { type: Date, default: Date.now },
+    source: { type: String, default: "app" },
+    createdAt: { type: String, default: "" }, 
+    updatedAt: { type: String, default: "" },
 });
 
 module.exports = mongoose.model('AttendanceLogForOutDuty', attendanceLogSchema);
+
 
 

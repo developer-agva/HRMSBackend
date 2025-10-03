@@ -1110,6 +1110,7 @@ const calculateAttendDuration = async (req, res) => {
 
       for (const punch of punches) {
         if (punch.type === "in") {
+          // If there's already an unmatched IN, ignore the previous one
           lastInTime = punch.time;
         } else if (punch.type === "out" && lastInTime) {
           const inTime = moment(lastInTime, "HH:mm");
@@ -1119,8 +1120,11 @@ const calculateAttendDuration = async (req, res) => {
             outTime.add(1, "day"); // cross midnight
           }
 
-          totalDuration += outTime.diff(inTime, "minutes");
-          lastInTime = null;
+          const duration = outTime.diff(inTime, "minutes");
+          if (duration > 0) {
+            totalDuration += duration;
+          }
+          lastInTime = null; // Reset for next pair
         }
       }
 

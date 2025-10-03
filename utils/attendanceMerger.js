@@ -233,16 +233,21 @@ async function findCommonAttendanceAndUpdate() {
   let effectiveMinutes = 0;
   const inTimes = [];
   const outTimes = [];
+  let lastInTime = null;
 
-  for (let i = 0; i < sortedPunches.length - 1; i++) {
-    const current = sortedPunches[i];
-    const next = sortedPunches[i + 1];
-
-    if (current.type === 'in' && next.type === 'out' && next.time.isAfter(current.time)) {
-      effectiveMinutes += next.time.diff(current.time, 'minutes');
-      inTimes.push(current.time);
-      outTimes.push(next.time);
-      i++; // Skip next since it's paired
+  for (const punch of sortedPunches) {
+    if (punch.type === 'in') {
+      // If there's already an unmatched IN, ignore the previous one
+      lastInTime = punch.time;
+    } else if (punch.type === 'out' && lastInTime) {
+      // Calculate duration between last IN and current OUT
+      const duration = punch.time.diff(lastInTime, 'minutes');
+      if (duration > 0) {
+        effectiveMinutes += duration;
+        inTimes.push(lastInTime);
+        outTimes.push(punch.time);
+      }
+      lastInTime = null; // Reset for next pair
     }
   }
 
