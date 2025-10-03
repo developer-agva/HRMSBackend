@@ -1923,7 +1923,8 @@ const createAttendanceLogForOutDuty = async (req, res) => {
         ? `${existingLocation}||${location}`
         : location;
 
-      existingLog.updatedAt = now.toDate();
+      existingLog.source = "app";
+      existingLog.updatedAt = now.format("YYYY-MM-DD HH:mm:ss");
       await existingLog.save();
       
       return res.status(200).json({
@@ -1937,14 +1938,15 @@ const createAttendanceLogForOutDuty = async (req, res) => {
     // No log exists — create new one
     const newLog = new attendanceLogModelForOutDuty({
       employeeId,
-      AttendanceDate: now.toDate(),
+      AttendanceDate: now.format("YYYY-MM-DD"),
       location,
       InTime: formattedCheckIn,
-      OutTime: `${todayDate} 23:59:00`,
+      OutTime: "",
       PunchRecords: punchEntry,
       imageUrl: imageUrl || "NA",
-      createdAt: now.toDate(),
-      updatedAt: now.toDate()
+      source: "app",
+      createdAt: now.format("YYYY-MM-DD HH:mm:ss"),
+      updatedAt: now.format("YYYY-MM-DD HH:mm:ss")
     });
 
     await newLog.save();
@@ -2026,7 +2028,8 @@ const punchOutForOutDuty = async (req, res) => {
           OutTime: formattedOutTime,
           PunchRecords: updatedPunchRecords,
           location: updatedLocation,
-          updatedAt: now.toDate()
+          source: "app",
+          updatedAt: now.format("YYYY-MM-DD HH:mm:ss")
         }
       },
       { new: true }
@@ -2096,9 +2099,10 @@ const updateLocation = async (req, res) => {
       : location;
 
     // Update the location field
+    const now = moment().tz("Asia/Kolkata");
     const updatedLog = await attendanceLogModelForOutDuty.findByIdAndUpdate(
       id,
-      { $set: { location: updatedLocation } },
+      { $set: { location: updatedLocation, source: "app", updatedAt: now.format("YYYY-MM-DD HH:mm:ss") } },
       { new: true }
     );
 
@@ -2135,16 +2139,13 @@ const getAttendanceLogForOutDutyById = async (req, res) => {
     // Get current date & time in India Standard Time (IST)
     const now = moment().tz("Asia/Kolkata");
 
-    // Store AttendanceDate as YYYY-MM-DDT00:00:00.000Z (IST start of the day)
-    const AttendanceDate = now.startOf("day").toDate();
+    // Store AttendanceDate as YYYY-MM-DD string (IST date)
+    const todayDate = now.format("YYYY-MM-DD");
 
     // Check if the employee has already logged attendance for today
     const dataRecords = await attendanceLogModelForOutDuty.findOne({
       employeeId,
-      AttendanceDate: {
-        $gte: AttendanceDate, // Start of the day
-        $lt: moment(AttendanceDate).add(1, "day").toDate() // Next day's start (exclusive)
-      }
+      AttendanceDate: todayDate
     });
 
     return res.status(201).json({
@@ -2196,6 +2197,117 @@ const getAllPunchRecordsForOutDuty = async (req, res) => {
       message: "Internal Server Error",
       statusCode: 500,
       statusValue: "error"
+    });
+  }
+};
+
+const getAllOutDutyRecords = async (req, res) => {
+  try {
+    // Extract query parameters for filtering and pagination
+    const { 
+      employeeId, 
+      page = 1, 
+      limit = 10, 
+      dateFrom, 
+      dateTo, 
+      status,
+      source,
+      all = false
+    } = req.query;
+
+    // Build query object
+    let query = {};
+    
+    if (employeeId) {
+      query.employeeId = employeeId;
+    }
+    
+    if (dateFrom && dateTo) {
+      query.AttendanceDate = {
+        $gte: dateFrom,
+        $lte: dateTo
+      };
+    }
+    
+    if (status) {
+      query.Status = status;
+    }
+    
+    if (source) {
+      query.source = source;
+    }
+
+    // Get total count for pagination
+    const totalRecords = await attendanceLogModelForOutDuty.countDocuments(query);
+
+    let dataRecords;
+    let paginationInfo;
+
+    if (all === 'true' || all === true) {
+      // Return all records without pagination
+      dataRecords = await attendanceLogModelForOutDuty
+        .find(query)
+        .sort({ createdAt: -1 })
+        .maxTimeMS(20000); // 20 second timeout for larger datasets
+      
+      paginationInfo = {
+        message: "All records returned (no pagination)"
+      };
+    } else {
+      // Calculate pagination
+      const pageNum = parseInt(page);
+      const limitNum = parseInt(limit);
+      const skip = (pageNum - 1) * limitNum;
+
+      // Fetch records with pagination and sorting
+      dataRecords = await attendanceLogModelForOutDuty
+        .find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .maxTimeMS(10000); // 10 second timeout
+
+      // Calculate pagination info
+      const totalPages = Math.ceil(totalRecords / limitNum);
+      const hasNextPage = pageNum < totalPages;
+      const hasPrevPage = pageNum > 1;
+
+      paginationInfo = {
+        currentPage: pageNum,
+        totalPages: totalPages,
+        totalRecords: totalRecords,
+        limit: limitNum,
+        hasNextPage: hasNextPage,
+        hasPrevPage: hasPrevPage
+      };
+    }
+
+    return res.status(200).json({
+      message: "Out duty records fetched successfully",
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      data: dataRecords,
+      pagination: paginationInfo
+    });
+  } catch (error) {
+    console.error("Error fetching out duty records:", error);
+    
+    // Handle specific timeout errors
+    if (error.name === 'MongoServerSelectionError' || error.message.includes('ETIMEDOUT')) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection timeout. Please try again later.",
+        statusCode: 503,
+        statusValue: "error",
+        error: "Database timeout"
+      });
+    }
+    
+    return res.status(500).json({
+      message: "Internal Server Error",
+      statusCode: 500,
+      statusValue: "error",
+      error: error.message
     });
   }
 };
@@ -2491,6 +2603,86 @@ const saveEmpLocation = async (req, res) => {
 
 
 
+const recalculateDuration = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        message: "Attendance log ID is required",
+        statusCode: 400,
+        statusValue: "error"
+      });
+    }
+
+    // Find the attendance log
+    const attendanceLog = await attendanceLogModelForOutDuty.findById(id);
+    if (!attendanceLog) {
+      return res.status(404).json({
+        message: "Attendance log not found",
+        statusCode: 404,
+        statusValue: "error"
+      });
+    }
+
+    // Parse punch records
+    const records = attendanceLog.PunchRecords.split(",").filter(Boolean);
+    const punches = records.map((entry) => {
+      const [time] = entry.split(":");
+      const type = entry.includes("in") ? "in" : "out";
+      return { time: entry.slice(0, 5), type };
+    });
+
+    // Calculate duration using improved logic
+    let totalDuration = 0;
+    let lastInTime = null;
+
+    for (const punch of punches) {
+      if (punch.type === "in") {
+        // If there's already an unmatched IN, ignore the previous one
+        lastInTime = punch.time;
+      } else if (punch.type === "out" && lastInTime) {
+        const inTime = moment(lastInTime, "HH:mm");
+        const outTime = moment(punch.time, "HH:mm");
+
+        if (outTime.isBefore(inTime)) {
+          outTime.add(1, "day"); // cross midnight
+        }
+
+        const duration = outTime.diff(inTime, "minutes");
+        if (duration > 0) {
+          totalDuration += duration;
+        }
+        lastInTime = null; // Reset for next pair
+      }
+    }
+
+    // Update the duration
+    attendanceLog.Duration = totalDuration;
+    await attendanceLog.save();
+
+    return res.status(200).json({
+      message: "Duration recalculated successfully",
+      statusCode: 200,
+      statusValue: "success",
+      data: {
+        _id: attendanceLog._id,
+        employeeId: attendanceLog.employeeId,
+        Duration: totalDuration,
+        PunchRecords: attendanceLog.PunchRecords
+      }
+    });
+
+  } catch (error) {
+    console.error("Error recalculating duration:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      statusCode: 500,
+      statusValue: "error"
+    });
+  }
+};
+
 module.exports = {
   createAttendanceLogForOutDuty,
   punchOutForOutDuty,
@@ -2507,6 +2699,8 @@ module.exports = {
   createEmployeeSalary,
   getAllEmployeeSalaries,
   getAllPunchRecordsForOutDuty,
+  getAllOutDutyRecords,
   updateLocation,
-  saveEmpLocation
+  saveEmpLocation,
+  recalculateDuration
 };
