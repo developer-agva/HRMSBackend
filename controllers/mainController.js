@@ -1876,7 +1876,7 @@ const removeDuplicateLogs = async (req, res) => {
 
 const createAttendanceLogForOutDuty = async (req, res) => {
   try {
-    const { employeeId, location, imageUrl } = req.body;
+    const { employeeId, location, imageUrl, createdAt, updatedAt, InTime, AttendanceDate } = req.body;
 
     if (!employeeId || !location) {
       return res.status(400).json({
@@ -1886,10 +1886,39 @@ const createAttendanceLogForOutDuty = async (req, res) => {
       });
     }
 
+    // Use provided timestamps or current time as fallback
     const now = moment().tz("Asia/Kolkata");
-    const todayDate = now.format("YYYY-MM-DD");
-    const formattedTime = now.format("HH:mm");
-    const formattedCheckIn = now.format("YYYY-MM-DD HH:mm:ss");
+    
+    // Convert date strings to Date objects for MongoDB storage
+    let providedCreatedAt, providedUpdatedAt, providedAttendanceDate;
+    
+    if (createdAt) {
+      // If createdAt is provided as string, convert to Date
+      providedCreatedAt = new Date(createdAt);
+    } else {
+      providedCreatedAt = new Date();
+    }
+    
+    if (updatedAt) {
+      // If updatedAt is provided as string, convert to Date
+      providedUpdatedAt = new Date(updatedAt);
+    } else {
+      providedUpdatedAt = new Date();
+    }
+    
+    if (AttendanceDate) {
+      // If AttendanceDate is provided as string, convert to Date
+      providedAttendanceDate = new Date(AttendanceDate);
+    } else {
+      providedAttendanceDate = new Date();
+    }
+    
+    const providedInTime = InTime || now.format("YYYY-MM-DD HH:mm:ss");
+    
+    // Extract date from Date object for comparison
+    const todayDate = moment(providedAttendanceDate).format("YYYY-MM-DD");
+    const formattedTime = moment(providedInTime).format("HH:mm");
+    const formattedCheckIn = providedInTime;
 
     // Only standard format for punch (no location here)
     const punchEntry = `${formattedTime}:in(IN),`;
@@ -1923,8 +1952,7 @@ const createAttendanceLogForOutDuty = async (req, res) => {
         ? `${existingLocation}||${location}`
         : location;
 
-      existingLog.source = "app";
-      existingLog.updatedAt = now.format("YYYY-MM-DD HH:mm:ss");
+      existingLog.updatedAt = providedUpdatedAt;
       await existingLog.save();
       
       return res.status(200).json({
@@ -1938,15 +1966,14 @@ const createAttendanceLogForOutDuty = async (req, res) => {
     // No log exists — create new one
     const newLog = new attendanceLogModelForOutDuty({
       employeeId,
-      AttendanceDate: now.format("YYYY-MM-DD"),
+      AttendanceDate: providedAttendanceDate,
       location,
       InTime: formattedCheckIn,
       OutTime: "",
       PunchRecords: punchEntry,
       imageUrl: imageUrl || "NA",
-      source: "app",
-      createdAt: now.format("YYYY-MM-DD HH:mm:ss"),
-      updatedAt: now.format("YYYY-MM-DD HH:mm:ss")
+      createdAt: providedCreatedAt,
+      updatedAt: providedUpdatedAt
     });
 
     await newLog.save();
@@ -1972,7 +1999,7 @@ const createAttendanceLogForOutDuty = async (req, res) => {
 const punchOutForOutDuty = async (req, res) => {
   try {
     const { id } = req.params;
-    const { location } = req.body;
+    const { location, OutTime, updatedAt } = req.body;
 
     if (!id || !location) {
       return res.status(400).json({
@@ -1983,8 +2010,18 @@ const punchOutForOutDuty = async (req, res) => {
     }
 
     const now = moment().tz("Asia/Kolkata");
-    const formattedOutTime = now.format("YYYY-MM-DD HH:mm:ss");
-    const punchOutEntry = `${now.format("HH:mm")}:out(OUT),`;
+    const providedOutTime = OutTime || now.format("YYYY-MM-DD HH:mm:ss");
+    
+    // Convert string date to proper Date object
+    let providedUpdatedAt;
+    if (updatedAt) {
+      providedUpdatedAt = new Date(updatedAt);
+    } else {
+      providedUpdatedAt = new Date();
+    }
+    
+    const formattedOutTime = providedOutTime;
+    const punchOutEntry = `${moment(providedOutTime).format("HH:mm")}:out(OUT),`;
 
     //  Find existing log by ID
     const existingLog = await attendanceLogModelForOutDuty.findById(id);
@@ -2028,8 +2065,7 @@ const punchOutForOutDuty = async (req, res) => {
           OutTime: formattedOutTime,
           PunchRecords: updatedPunchRecords,
           location: updatedLocation,
-          source: "app",
-          updatedAt: now.format("YYYY-MM-DD HH:mm:ss")
+          updatedAt: providedUpdatedAt
         }
       },
       { new: true }
@@ -2057,7 +2093,7 @@ const punchOutForOutDuty = async (req, res) => {
 const updateLocation = async (req, res) => {
   try {
     const { id } = req.params;
-    const { location } = req.body;
+    const { location, updatedAt } = req.body;
 
     // Validate required fields
     if (!id || !location) {
@@ -2100,9 +2136,18 @@ const updateLocation = async (req, res) => {
 
     // Update the location field
     const now = moment().tz("Asia/Kolkata");
+    
+    // Convert string date to proper Date object
+    let providedUpdatedAt;
+    if (updatedAt) {
+      providedUpdatedAt = new Date(updatedAt);
+    } else {
+      providedUpdatedAt = new Date();
+    }
+    
     const updatedLog = await attendanceLogModelForOutDuty.findByIdAndUpdate(
       id,
-      { $set: { location: updatedLocation, source: "app", updatedAt: now.format("YYYY-MM-DD HH:mm:ss") } },
+      { $set: { location: updatedLocation, updatedAt: providedUpdatedAt } },
       { new: true }
     );
 

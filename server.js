@@ -1346,41 +1346,41 @@ const findEmployeesWith50xxAnd80xx = async () => {
 
 
 
-const { findAndCreateAttendanceLog, removeDuplicateAttendanceLogs, findCommonAttendanceAndUpdate } = require("./utils/attendanceMerger");
-const leaveTakenHistoryModel = require("./models/leaveTakenHistoryModel.js");
+// const { findAndCreateAttendanceLog, removeDuplicateAttendanceLogs, findCommonAttendanceAndUpdate } = require("./utils/attendanceMerger");
+// const leaveTakenHistoryModel = require("./models/leaveTakenHistoryModel.js");
 
-cron.schedule("0 10 * * *", async () => {
-  try {
-    console.log("[Cron] 10:00 AM IST job started...");
-     await findAndCreateAttendanceLog();
-    await removeDuplicateAttendanceLogs();
-    console.log("[Cron] 10:00 AM IST job completed.");
-  } catch (err) {
-    console.error("[Cron] Error running 10:00 AM IST job:", err);
-  }
-});
+// cron.schedule("0 10 * * *", async () => {
+//   try {
+//     console.log("[Cron] 10:00 AM IST job started...");
+//      await findAndCreateAttendanceLog();
+//     await removeDuplicateAttendanceLogs();
+//     console.log("[Cron] 10:00 AM IST job completed.");
+//   } catch (err) {
+//     console.error("[Cron] Error running 10:00 AM IST job:", err);
+//   }
+// });
 
-cron.schedule("0 12 * * *", async () => {
-  try {
-    console.log("[Cron] 10:00 AM IST job started...");
-     await findAndCreateAttendanceLog();
-     await removeDuplicateAttendanceLogs();
-    console.log("[Cron] 10:00 AM IST job completed.");
-  } catch (err) {
-    console.error("[Cron] Error running 10:00 AM IST job:", err);
-  }
-});
+// cron.schedule("0 12 * * *", async () => {
+//   try {
+//     console.log("[Cron] 10:00 AM IST job started...");
+//      await findAndCreateAttendanceLog();
+//      await removeDuplicateAttendanceLogs();
+//     console.log("[Cron] 10:00 AM IST job completed.");
+//   } catch (err) {
+//     console.error("[Cron] Error running 10:00 AM IST job:", err);
+//   }
+// });
 
 
-cron.schedule("0 17 * * *", async () => {
-  try {
-    console.log("[Cron] 7:00 PM IST job started...");
-    await findCommonAttendanceAndUpdate();
-    console.log("[Cron] 7:00 PM IST job completed.");
-  } catch (err) {
-    console.error("[Cron] Error running 7:00 PM IST job:", err);
-  }
-});
+// cron.schedule("0 17 * * *", async () => {
+//   try {
+//     console.log("[Cron] 7:00 PM IST job started...");
+//     await findCommonAttendanceAndUpdate();
+//     console.log("[Cron] 7:00 PM IST job completed.");
+//   } catch (err) {
+//     console.error("[Cron] Error running 7:00 PM IST job:", err);
+//   }
+// });
 
 
 // (async () => {
