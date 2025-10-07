@@ -73,6 +73,7 @@ const employeeSchema = new mongoose.Schema({
   isNotice:{ type: Boolean, default: false },
   isWorking:{ type: Boolean, default: true },
   isInhouse:{ type: Boolean, default: true },
+  work_outside:{ type: Boolean, default: false },
   employee_basic_details: {
     bank_name: { type: String, default: "" },
     bank_ifsc: { type: String, default: "" },

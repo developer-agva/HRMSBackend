@@ -4,6 +4,7 @@ require('dotenv').config();
 // Import the models
 const AttendanceLogModel = require('./models/attendanceLogModel');
 const AttendanceLogForOutDutyModel = require('./models/attendanceLogModelForOutDuty');
+const EmployeeModel = require('./models/employeeModel');
 
 /**
  * Connects to MongoDB using the existing configuration
@@ -103,21 +104,72 @@ const calculateDurationFromTimes = (inTime, outTime) => {
 };
 
 /**
+ * Calculates span (first IN to last OUT) from punch records
+ * @param {string} punchRecords
+ * @returns {number} Duration in minutes
+ */
+const calculateSpanFromPunchRecords = (punchRecords) => {
+  if (!punchRecords || typeof punchRecords !== 'string') {
+    return 0;
+  }
+  try {
+    const punches = punchRecords.split(',').filter(p => p.trim() !== '');
+    let firstIn = null;
+    let lastOut = null;
+    for (const punch of punches) {
+      const parts = punch.split(':');
+      if (parts.length >= 3) {
+        const timeStr = `${parts[0]}:${parts[1]}`;
+        const action = parts[2].toLowerCase();
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        const minutesSinceMidnight = hours * 60 + minutes;
+        if (action.includes('in')) {
+          if (firstIn === null || minutesSinceMidnight < firstIn) {
+            firstIn = minutesSinceMidnight;
+          }
+        } else if (action.includes('out')) {
+          if (lastOut === null || minutesSinceMidnight > lastOut) {
+            lastOut = minutesSinceMidnight;
+          }
+        }
+      }
+    }
+    if (firstIn !== null && lastOut !== null && lastOut >= firstIn) {
+      const diff = lastOut - firstIn;
+      return diff > 0 ? diff : 0;
+    }
+    return 0;
+  } catch (e) {
+    return 0;
+  }
+};
+
+/**
  * Enhanced duration calculation with better edge case handling
  */
-const calculateEnhancedDuration = (record) => {
+const calculateEnhancedDuration = (record, isWorkOutside) => {
   let duration = 0;
   let method = '';
   
-  // Method 1: Try punch records first
-  if (record.PunchRecords && record.PunchRecords.trim() !== '') {
-    duration = calculateDurationFromPunchRecords(record.PunchRecords);
-    if (duration > 0) {
-      method = 'punch records';
+  // For work_outside employees: ONLY use first-in to last-out (span) when punch records exist
+  if (isWorkOutside) {
+    if (record.PunchRecords && record.PunchRecords.trim() !== '') {
+      duration = calculateSpanFromPunchRecords(record.PunchRecords);
+      if (duration > 0) {
+        method = 'first-in to last-out span';
+      }
+    }
+  } else {
+    // Regular employees: sum of in/out pairs
+    if (record.PunchRecords && record.PunchRecords.trim() !== '') {
+      duration = calculateDurationFromPunchRecords(record.PunchRecords);
+      if (duration > 0) {
+        method = 'punch records';
+      }
     }
   }
   
-  // Method 2: Try InTime/OutTime if punch records didn't work
+  // Method 2: Try InTime/OutTime if no usable punches
   if (duration === 0 && record.InTime && record.OutTime) {
     duration = calculateDurationFromTimes(record.InTime, record.OutTime);
     if (duration > 0) {
@@ -152,6 +204,14 @@ const calculateOutDutyDurations = async () => {
     
     console.log("🔍 Finding out-duty records with empty durations...");
     
+    // Build a set of employee identifiers who work outside
+    const outsideEmployees = await EmployeeModel.find({ work_outside: true }).select('employeeId employeeCode').lean();
+    const workOutsideSet = new Set();
+    for (const emp of outsideEmployees) {
+      if (emp.employeeId) workOutsideSet.add(String(emp.employeeId));
+      if (emp.employeeCode) workOutsideSet.add(String(emp.employeeCode));
+    }
+    
     // Find records with empty durations
     const recordsToUpdate = await AttendanceLogForOutDutyModel.find({
       $or: [
@@ -175,7 +235,9 @@ const calculateOutDutyDurations = async () => {
     console.log("\n🔄 Calculating durations...");
     
     for (const record of recordsToUpdate) {
-      const { duration, method } = calculateEnhancedDuration(record);
+      const empKey = record.employeeId ? String(record.employeeId) : '';
+      const isWorkOutside = empKey && workOutsideSet.has(empKey);
+      const { duration, method } = calculateEnhancedDuration(record, isWorkOutside);
       
       if (duration > 0) {
         bulkOps.push({

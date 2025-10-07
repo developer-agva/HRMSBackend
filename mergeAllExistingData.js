@@ -4,6 +4,7 @@ require('dotenv').config();
 // Import the models
 const AttendanceLogModel = require('./models/attendanceLogModel');
 const AttendanceLogForOutDutyModel = require('./models/attendanceLogModelForOutDuty');
+const EmployeeModel = require('./models/employeeModel');
 
 /**
  * Connects to MongoDB using the existing configuration
@@ -206,7 +207,7 @@ const findBestMatchingAttendanceLog = async (outDutyRecord, allAttendanceLogs) =
 /**
  * Creates a new attendance log from out-duty record
  */
-const createNewAttendanceLogFromOutDuty = (outDutyRecord) => {
+const createNewAttendanceLogFromOutDuty = (outDutyRecord, workOutside) => {
   const outDutyDuration = calculateDurationFromTimes(outDutyRecord.InTime, outDutyRecord.OutTime) ||
                          calculateDurationFromPunchRecords(outDutyRecord.PunchRecords, outDutyRecord.AttendanceDate) ||
                          parseDurationToMinutes(outDutyRecord.Duration);
@@ -219,6 +220,7 @@ const createNewAttendanceLogFromOutDuty = (outDutyRecord) => {
     Duration: outDutyDuration,
     Status: determineStatus(outDutyDuration),
     DurationSource: "Out Duty Only",
+    WorkOutside: !!workOutside,
     MergedOn: new Date(),
     InTime: outDutyRecord.InTime || null,
     OutTime: outDutyRecord.OutTime || null,
@@ -246,7 +248,7 @@ const createNewAttendanceLogFromOutDuty = (outDutyRecord) => {
 /**
  * Updates existing attendance log with out-duty data
  */
-const updateAttendanceLogWithOutDuty = (attendanceLog, outDutyRecord) => {
+const updateAttendanceLogWithOutDuty = (attendanceLog, outDutyRecord, workOutside) => {
   const outDutyDuration = calculateDurationFromTimes(outDutyRecord.InTime, outDutyRecord.OutTime) ||
                          calculateDurationFromPunchRecords(outDutyRecord.PunchRecords, outDutyRecord.AttendanceDate) ||
                          parseDurationToMinutes(outDutyRecord.Duration);
@@ -258,6 +260,7 @@ const updateAttendanceLogWithOutDuty = (attendanceLog, outDutyRecord) => {
     Duration: totalDuration,
     Status: determineStatus(totalDuration),
     DurationSource: "Office + Out Duty",
+    WorkOutside: attendanceLog.WorkOutside === true ? true : !!workOutside,
     MergedOn: new Date(),
     PunchRecords: attendanceLog.PunchRecords ? 
       `${attendanceLog.PunchRecords} || OUT-DUTY: ${outDutyRecord.PunchRecords || ''}` : 
@@ -287,6 +290,14 @@ const mergeAllExistingData = async () => {
     // Get ALL attendance logs (no date restrictions)
     const allAttendanceLogs = await AttendanceLogModel.find({}).lean();
     console.log(`📊 Found ${allAttendanceLogs.length} existing attendance logs`);
+
+    // Build a set of employees who have work_outside = true (by both employeeId and employeeCode)
+    const outsideEmployees = await EmployeeModel.find({ work_outside: true }).select('employeeId employeeCode').lean();
+    const workOutsideSet = new Set();
+    for (const emp of outsideEmployees) {
+      if (emp.employeeId) workOutsideSet.add(String(emp.employeeId));
+      if (emp.employeeCode) workOutsideSet.add(String(emp.employeeCode));
+    }
     
     let updatedCount = 0;
     let createdCount = 0;
@@ -321,7 +332,8 @@ const mergeAllExistingData = async () => {
         }
         
         // Update existing attendance log
-        const updatedLog = updateAttendanceLogWithOutDuty(matchResult.match, outDutyRecord);
+        const workOutside = workOutsideSet.has(String(outDutyRecord.employeeId));
+        const updatedLog = updateAttendanceLogWithOutDuty(matchResult.match, outDutyRecord, workOutside);
         
         bulkOps.push({
           updateOne: {
@@ -341,7 +353,8 @@ const mergeAllExistingData = async () => {
         
       } else {
         // Create new attendance log
-        const newAttendanceLog = createNewAttendanceLogFromOutDuty(outDutyRecord);
+        const workOutside = workOutsideSet.has(String(outDutyRecord.employeeId));
+        const newAttendanceLog = createNewAttendanceLogFromOutDuty(outDutyRecord, workOutside);
         
         bulkOps.push({
           insertOne: {
