@@ -30,6 +30,7 @@ const attendanceLogSchema = new mongoose.Schema({
   OutTime: { type: String, default: "1900-01-01 00:00:00" },
   OutDeviceId: { type: String, default: "" },
   Duration: { type: Number, default: 0 },
+  DurationSource: { type: String, default: "" },
   LateBy: { type: Number, default: 0 },
   EarlyBy: { type: Number, default: 0 },
   IsOnLeave: { type: Number, default: 0 },

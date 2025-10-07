@@ -6,10 +6,12 @@ const uri = process.env.MONGO_URI;
 const connectToMongoDB = async () => {
   try {
     await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+      serverSelectionTimeoutMS: 30000, // Increased to 30 seconds for Atlas
       socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
-      connectTimeoutMS: 10000, // Give up initial connection after 10 seconds
-      maxPoolSize: 10 // Maintain up to 10 socket connections
+      connectTimeoutMS: 30000, // Increased to 30 seconds for Atlas
+      maxPoolSize: 10, // Maintain up to 10 socket connections
+      retryWrites: true,
+      w: 'majority'
     });
     console.log("Connected to MongoDB");
   } catch (err) {
