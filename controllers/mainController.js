@@ -2670,35 +2670,54 @@ const recalculateDuration = async (req, res) => {
       });
     }
 
+    // Determine work_outside flag for this employee (default false)
+    let isWorkOutside = false;
+    try {
+      const empDoc = await employeeModel.findOne({ employeeId: String(attendanceLog.employeeId) }, { work_outside: 1 });
+      isWorkOutside = !!(empDoc && empDoc.work_outside);
+    } catch (e) {
+      isWorkOutside = false;
+    }
+
     // Parse punch records
-    const records = attendanceLog.PunchRecords.split(",").filter(Boolean);
+    const records = (attendanceLog.PunchRecords || "").split(",").filter(Boolean);
     const punches = records.map((entry) => {
-      const [time] = entry.split(":");
       const type = entry.includes("in") ? "in" : "out";
       return { time: entry.slice(0, 5), type };
     });
 
-    // Calculate duration using improved logic
+    // Calculate duration with work_outside rule
     let totalDuration = 0;
-    let lastInTime = null;
-
-    for (const punch of punches) {
-      if (punch.type === "in") {
-        // If there's already an unmatched IN, ignore the previous one
-        lastInTime = punch.time;
-      } else if (punch.type === "out" && lastInTime) {
-        const inTime = moment(lastInTime, "HH:mm");
-        const outTime = moment(punch.time, "HH:mm");
-
-        if (outTime.isBefore(inTime)) {
-          outTime.add(1, "day"); // cross midnight
+    if (isWorkOutside) {
+      let firstIn = null;
+      let lastOut = null;
+      for (const punch of punches) {
+        if (punch.type === "in") {
+          const t = moment(punch.time, "HH:mm");
+          if (!firstIn || t.isBefore(firstIn)) firstIn = t;
+        } else if (punch.type === "out") {
+          const t = moment(punch.time, "HH:mm");
+          if (!lastOut || t.isAfter(lastOut)) lastOut = t;
         }
-
-        const duration = outTime.diff(inTime, "minutes");
-        if (duration > 0) {
-          totalDuration += duration;
+      }
+      if (firstIn && lastOut) {
+        if (lastOut.isBefore(firstIn)) lastOut.add(1, "day");
+        const span = lastOut.diff(firstIn, "minutes");
+        totalDuration = span > 0 ? span : 0;
+      }
+    } else {
+      let lastInTime = null;
+      for (const punch of punches) {
+        if (punch.type === "in") {
+          lastInTime = punch.time;
+        } else if (punch.type === "out" && lastInTime) {
+          const inTime = moment(lastInTime, "HH:mm");
+          const outTime = moment(punch.time, "HH:mm");
+          if (outTime.isBefore(inTime)) outTime.add(1, "day");
+          const duration = outTime.diff(inTime, "minutes");
+          if (duration > 0) totalDuration += duration;
+          lastInTime = null;
         }
-        lastInTime = null; // Reset for next pair
       }
     }
 

@@ -1095,36 +1095,59 @@ const calculateAttendDuration = async (req, res) => {
     for (const log of punchInAttendanceLogs) {
       const { _id, PunchRecords, employeeId } = log;
 
-      if (!PunchRecords || PunchRecords.trim() === "") continue;
-
-      const records = PunchRecords.split(",").filter(Boolean);
-
-      const punches = records.map((entry) => {
-        const [time] = entry.split(":");
-        const type = entry.includes("in") ? "in" : "out";
-        return { time: entry.slice(0, 5), type };
-      });
+      // Determine if this employee works outside (default false)
+      let isWorkOutside = false;
+      try {
+        const empDoc = await employeeModel.findOne({ employeeId: String(employeeId) }, { work_outside: 1 });
+        isWorkOutside = !!(empDoc && empDoc.work_outside);
+      } catch (e) {
+        isWorkOutside = false;
+      }
 
       let totalDuration = 0;
-      let lastInTime = null;
 
-      for (const punch of punches) {
-        if (punch.type === "in") {
-          // If there's already an unmatched IN, ignore the previous one
-          lastInTime = punch.time;
-        } else if (punch.type === "out" && lastInTime) {
-          const inTime = moment(lastInTime, "HH:mm");
-          const outTime = moment(punch.time, "HH:mm");
+      if (PunchRecords && PunchRecords.trim() !== "") {
+        const records = PunchRecords.split(",").filter(Boolean);
+        const punches = records.map((entry) => {
+          const type = entry.includes("in") ? "in" : "out";
+          return { time: entry.slice(0, 5), type };
+        });
 
-          if (outTime.isBefore(inTime)) {
-            outTime.add(1, "day"); // cross midnight
+        if (isWorkOutside) {
+          // Use first IN to last OUT span
+          let firstIn = null;
+          let lastOut = null;
+          for (const punch of punches) {
+            if (punch.type === "in") {
+              const t = moment(punch.time, "HH:mm");
+              if (!firstIn || t.isBefore(firstIn)) firstIn = t;
+            } else if (punch.type === "out") {
+              const t = moment(punch.time, "HH:mm");
+              if (!lastOut || t.isAfter(lastOut)) lastOut = t;
+            }
           }
-
-          const duration = outTime.diff(inTime, "minutes");
-          if (duration > 0) {
-            totalDuration += duration;
+          if (firstIn && lastOut) {
+            if (lastOut.isBefore(firstIn)) lastOut.add(1, "day");
+            const span = lastOut.diff(firstIn, "minutes");
+            totalDuration = span > 0 ? span : 0;
           }
-          lastInTime = null; // Reset for next pair
+        } else {
+          // Existing behavior: sum of IN/OUT pairs
+          let lastInTime = null;
+          for (const punch of punches) {
+            if (punch.type === "in") {
+              lastInTime = punch.time;
+            } else if (punch.type === "out" && lastInTime) {
+              const inTime = moment(lastInTime, "HH:mm");
+              const outTime = moment(punch.time, "HH:mm");
+              if (outTime.isBefore(inTime)) {
+                outTime.add(1, "day");
+              }
+              const duration = outTime.diff(inTime, "minutes");
+              if (duration > 0) totalDuration += duration;
+              lastInTime = null;
+            }
+          }
         }
       }
 
@@ -1133,7 +1156,7 @@ const calculateAttendDuration = async (req, res) => {
         { $set: { Duration: totalDuration } }
       );
 
-      console.log(`Updated employee ${employeeId} - Duration: ${totalDuration} minutes`);
+      console.log(`Updated employee ${employeeId} - Duration: ${totalDuration} minutes (work_outside=${isWorkOutside})`);
     }
 
     // console.log("All durations calculated and updated.");
@@ -1157,6 +1180,112 @@ const calculateAttendDuration = async (req, res) => {
   }
 };
 
+
+// Recalculate Duration for main AttendanceLogModel respecting work_outside (async, batched)
+const recalcMainAttendanceDuration = async (req, res) => {
+  try {
+    const { previousDate, currentDate, employeeIds } = req.body || {};
+
+    // Respond immediately and run job in background
+    if (res) {
+      res.status(202).json({
+        statusCode: 202,
+        statusValue: "ACCEPTED",
+        message: "Recalculation started in background"
+      });
+    }
+
+    // Compute date range in UTC based on IST inputs
+    let startUTC;
+    let endUTC;
+    if (previousDate && currentDate) {
+      const start = moment.tz(previousDate, "Asia/Kolkata").startOf("day");
+      const end = moment.tz(currentDate, "Asia/Kolkata").endOf("day");
+      startUTC = start.clone().subtract(5, "hours").subtract(30, "minutes").toDate();
+      endUTC = end.clone().subtract(5, "hours").subtract(30, "minutes").toDate();
+    } else {
+      const todayIST = moment().tz("Asia/Kolkata").startOf("day");
+      endUTC = todayIST.clone().endOf("day").subtract(5, "hours").subtract(30, "minutes").toDate();
+      startUTC = todayIST.clone().subtract(7, "days").subtract(5, "hours").subtract(30, "minutes").toDate();
+    }
+
+    const query = { AttendanceDate: { $gte: startUTC, $lte: endUTC } };
+    if (Array.isArray(employeeIds) && employeeIds.length) {
+      query.EmployeeCode = { $in: employeeIds.map(String) };
+    }
+
+    const projection = { _id: 1, EmployeeCode: 1, PunchRecords: 1 };
+    const logs = await AttendanceLogModel.find(query, projection).lean();
+
+    if (!logs.length) return;
+
+    // Cache work_outside flags in one query
+    const uniqueEmpIds = Array.from(new Set(logs.map(l => String(l.EmployeeCode || "")).filter(Boolean)));
+    const empDocs = await employeeModel.find({ employeeId: { $in: uniqueEmpIds } }, { employeeId: 1, work_outside: 1 }).lean();
+    const empFlag = new Map(empDocs.map(e => [String(e.employeeId), !!e.work_outside]));
+
+    // Helper to compute duration per record
+    const computeDuration = (record) => {
+      const empId = String(record.EmployeeCode || "");
+      const isWorkOutside = !!empFlag.get(empId);
+      let totalDuration = 0;
+      const pr = record.PunchRecords || "";
+      if (pr && pr.trim() !== "") {
+        const punches = pr
+          .split(",")
+          .filter((p) => p.trim() !== "")
+          .map((entry) => ({ type: entry.includes("in") ? "in" : "out", time: entry.slice(0, 5) }));
+        if (isWorkOutside) {
+          let firstIn = null; let lastOut = null;
+          for (const p of punches) {
+            if (p.type === "in") {
+              const t = moment(p.time, "HH:mm");
+              if (!firstIn || t.isBefore(firstIn)) firstIn = t;
+            } else if (p.type === "out") {
+              const t = moment(p.time, "HH:mm");
+              if (!lastOut || t.isAfter(lastOut)) lastOut = t;
+            }
+          }
+          if (firstIn && lastOut) {
+            if (lastOut.isBefore(firstIn)) lastOut.add(1, "day");
+            const span = lastOut.diff(firstIn, "minutes");
+            totalDuration = span > 0 ? span : 0;
+          }
+        } else {
+          let lastInTime = null;
+          for (const p of punches) {
+            if (p.type === "in") lastInTime = p.time; else if (p.type === "out" && lastInTime) {
+              const inTime = moment(lastInTime, "HH:mm");
+              const outTime = moment(p.time, "HH:mm");
+              if (outTime.isBefore(inTime)) outTime.add(1, "day");
+              const dur = outTime.diff(inTime, "minutes");
+              if (dur > 0) totalDuration += dur;
+              lastInTime = null;
+            }
+          }
+        }
+      }
+      return totalDuration;
+    };
+
+    // Batch updates with bulkWrite
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < logs.length; i += BATCH_SIZE) {
+      const batch = logs.slice(i, i + BATCH_SIZE);
+      const ops = batch.map((rec) => ({
+        updateOne: {
+          filter: { _id: rec._id },
+          update: { $set: { Duration: computeDuration(rec) } }
+        }
+      }));
+      if (ops.length) {
+        await AttendanceLogModel.bulkWrite(ops, { ordered: false });
+      }
+    }
+  } catch (error) {
+    console.error("Error recalculating main attendance durations:", error);
+  }
+};
 
 const normalizeEmployeeCodes = async () => {
   try {
@@ -1400,3 +1529,6 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Swagger API Docs available at http://localhost:${PORT}/api-docs`);
 });
+
+// Endpoint to trigger main attendance duration recalculation
+app.post('/api/recalc-main-attendance', recalcMainAttendanceDuration);
