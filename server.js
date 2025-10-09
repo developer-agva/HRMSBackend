@@ -1180,6 +1180,73 @@ const calculateAttendDuration = async (req, res) => {
   }
 };
 
+// Function to automatically punch out users at 18:15:00 IST
+const autoPunchOutUsers = async () => {
+  try {
+    const todayIST = moment().tz("Asia/Kolkata").startOf("day");
+    const todayEndUTC = todayIST.clone().endOf("day").subtract(5, "hours").subtract(30, "minutes").toDate();
+    const todayStartUTC = todayIST.clone().subtract(5, "hours").subtract(30, "minutes").toDate();
+
+    // Find all attendance logs for today that have InTime but no OutTime or empty OutTime
+    const logsToUpdate = await AttendanceLogForOutDuty.find({
+      AttendanceDate: { $gte: todayStartUTC, $lt: todayEndUTC },
+      InTime: { $exists: true, $ne: "" },
+      $or: [
+        { OutTime: { $exists: false } },
+        { OutTime: "" },
+        { OutTime: { $regex: /^$/ } }
+      ],
+      PunchRecords: { $regex: /in\(IN\)/ } // Must have at least one punch in
+    });
+
+    console.log(`Found ${logsToUpdate.length} records to auto punch out`);
+
+    const autoPunchOutTime = moment().tz("Asia/Kolkata").format("YYYY-MM-DD HH:mm:ss");
+    const autoPunchOutEntry = "18:15:out(OUT),";
+
+    for (const log of logsToUpdate) {
+      try {
+        // Check if the last punch is already an OUT punch
+        const punchRecords = log.PunchRecords || "";
+        const punchArray = punchRecords.split(',').filter(Boolean);
+        const lastPunch = punchArray[punchArray.length - 1];
+
+        // Only add OUT punch if the last punch is IN
+        if (lastPunch && lastPunch.includes('in(IN)')) {
+          const updatedPunchRecords = punchRecords + autoPunchOutEntry;
+          
+          // Calculate duration based on InTime and OutTime
+          const inTime = moment(log.InTime, "YYYY-MM-DD HH:mm:ss");
+          const outTime = moment(autoPunchOutTime, "YYYY-MM-DD HH:mm:ss");
+          const newDuration = outTime.diff(inTime, "minutes");
+          
+          await AttendanceLogForOutDuty.findByIdAndUpdate(
+            log._id,
+            {
+              $set: {
+                OutTime: autoPunchOutTime,
+                PunchRecords: updatedPunchRecords,
+                Duration: newDuration,
+                updatedAt: new Date()
+              }
+            },
+            { new: true }
+          );
+
+          console.log(`Auto punched out employee ${log.employeeId} at ${autoPunchOutTime}, Duration: ${newDuration} minutes`);
+        }
+      } catch (error) {
+        console.error(`Error auto punching out employee ${log.employeeId}:`, error);
+      }
+    }
+
+    console.log(`Auto punch out completed for ${logsToUpdate.length} employees`);
+  } catch (error) {
+    console.error("Error in autoPunchOutUsers:", error);
+    throw error;
+  }
+};
+
 
 // Recalculate Duration for main AttendanceLogModel respecting work_outside (async, batched)
 const recalcMainAttendanceDuration = async (req, res) => {
@@ -1321,6 +1388,410 @@ const normalizeEmployeeCodes = async () => {
 cron.schedule("*/30 * * * *", () => {
   console.log("EmployeeCode values updated successfully");
   normalizeEmployeeCodes();
+});
+
+// Schedule cron job to automatically punch out users at 18:15:00 IST
+cron.schedule("15 18 * * *", async () => {
+  console.log("Running automatic punch out job at 18:15:00 IST...");
+  try {
+    await autoPunchOutUsers();
+    console.log("Automatic punch out job completed successfully");
+  } catch (error) {
+    console.error("Error in automatic punch out job:", error);
+  }
+});
+
+// Manual endpoint to trigger auto punch out (for testing)
+app.post("/api/auto-punch-out", async (req, res) => {
+  try {
+    console.log("Manual auto punch out triggered...");
+    await autoPunchOutUsers();
+    res.status(200).json({
+      message: "Auto punch out completed successfully",
+      statusCode: 200,
+      statusValue: "success"
+    });
+  } catch (error) {
+    console.error("Error in manual auto punch out:", error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      statusCode: 500,
+      statusValue: "error"
+    });
+  }
+});
+
+// Function to fix existing records with 23:59:00 OutTime
+const fixExistingRecords = async () => {
+  try {
+    console.log("Fixing existing records with 23:59:00 OutTime...");
+    
+    // Find records with OutTime set to 23:59:00 that have only IN punch
+    const recordsToFix = await AttendanceLogForOutDuty.find({
+      OutTime: { $regex: /23:59:00/ },
+      PunchRecords: { $regex: /in\(IN\)/ },
+      $expr: {
+        $not: { $regexMatch: { input: "$PunchRecords", regex: /out\(OUT\)/ } }
+      }
+    });
+
+    console.log(`Found ${recordsToFix.length} records to fix`);
+
+    for (const record of recordsToFix) {
+      try {
+        // Extract the date from InTime
+        const inTimeDate = moment(record.InTime, "YYYY-MM-DD HH:mm:ss").format("YYYY-MM-DD");
+        const fixedOutTime = `${inTimeDate} 18:15:00`;
+        const fixedPunchRecords = record.PunchRecords + "18:15:out(OUT),";
+
+        // Calculate new duration based on InTime and fixed OutTime
+        const inTime = moment(record.InTime, "YYYY-MM-DD HH:mm:ss");
+        const outTime = moment(fixedOutTime, "YYYY-MM-DD HH:mm:ss");
+        const newDuration = outTime.diff(inTime, "minutes");
+
+        await AttendanceLogForOutDuty.findByIdAndUpdate(
+          record._id,
+          {
+            $set: {
+              OutTime: fixedOutTime,
+              PunchRecords: fixedPunchRecords,
+              Duration: newDuration,
+              updatedAt: new Date()
+            }
+          },
+          { new: true }
+        );
+
+        console.log(`Fixed record for employee ${record.employeeId}: OutTime changed from 23:59:00 to 18:15:00, Duration updated to ${newDuration} minutes`);
+      } catch (error) {
+        console.error(`Error fixing record for employee ${record.employeeId}:`, error);
+      }
+    }
+
+    console.log(`Fixed ${recordsToFix.length} existing records with updated durations`);
+  } catch (error) {
+    console.error("Error in fixExistingRecords:", error);
+    throw error;
+  }
+};
+
+// Manual endpoint to fix existing records
+app.post("/api/fix-existing-records", async (req, res) => {
+  try {
+    console.log("Manual fix existing records triggered...");
+    await fixExistingRecords();
+    res.status(200).json({
+      message: "Existing records fixed successfully",
+      statusCode: 200,
+      statusValue: "success"
+    });
+  } catch (error) {
+    console.error("Error in fix existing records:", error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      statusCode: 500,
+      statusValue: "error"
+    });
+  }
+});
+
+// Function to recalculate durations for records with 18:15:00 OutTime
+const recalculateDurations = async () => {
+  try {
+    console.log("Recalculating durations for records with 18:15:00 OutTime...");
+    
+    // Find records with OutTime set to 18:15:00
+    const recordsToRecalculate = await AttendanceLogForOutDuty.find({
+      OutTime: { $regex: /18:15:00/ },
+      InTime: { $exists: true, $ne: "" }
+    });
+
+    console.log(`Found ${recordsToRecalculate.length} records to recalculate`);
+
+    for (const record of recordsToRecalculate) {
+      try {
+        // Calculate duration based on InTime and OutTime
+        const inTime = moment(record.InTime, "YYYY-MM-DD HH:mm:ss");
+        const outTime = moment(record.OutTime, "YYYY-MM-DD HH:mm:ss");
+        const newDuration = outTime.diff(inTime, "minutes");
+
+        await AttendanceLogForOutDuty.findByIdAndUpdate(
+          record._id,
+          {
+            $set: {
+              Duration: newDuration,
+              updatedAt: new Date()
+            }
+          },
+          { new: true }
+        );
+
+        console.log(`Recalculated duration for employee ${record.employeeId}: ${newDuration} minutes`);
+      } catch (error) {
+        console.error(`Error recalculating duration for employee ${record.employeeId}:`, error);
+      }
+    }
+
+    console.log(`Recalculated durations for ${recordsToRecalculate.length} records`);
+  } catch (error) {
+    console.error("Error in recalculateDurations:", error);
+    throw error;
+  }
+};
+
+// Manual endpoint to recalculate durations
+app.post("/api/recalculate-durations", async (req, res) => {
+  try {
+    console.log("Manual recalculate durations triggered...");
+    await recalculateDurations();
+    res.status(200).json({
+      message: "Durations recalculated successfully",
+      statusCode: 200,
+      statusValue: "success"
+    });
+  } catch (error) {
+    console.error("Error in recalculate durations:", error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      statusCode: 500,
+      statusValue: "error"
+    });
+  }
+});
+
+// Function to undo auto punch outs (remove the 18:15:out(OUT) entry and clear OutTime)
+const undoAutoPunchOuts = async () => {
+  try {
+    console.log("Undoing auto punch outs...");
+    
+    // Find records that were auto punched out today (with 18:15:out(OUT) in PunchRecords)
+    const todayIST = moment().tz("Asia/Kolkata").startOf("day");
+    const todayEndUTC = todayIST.clone().endOf("day").subtract(5, "hours").subtract(30, "minutes").toDate();
+    const todayStartUTC = todayIST.clone().subtract(5, "hours").subtract(30, "minutes").toDate();
+
+    const recordsToUndo = await AttendanceLogForOutDuty.find({
+      AttendanceDate: { $gte: todayStartUTC, $lt: todayEndUTC },
+      PunchRecords: { $regex: /18:15:out\(OUT\)/ },
+      OutTime: { $regex: /18:15:00/ }
+    });
+
+    console.log(`Found ${recordsToUndo.length} records to undo auto punch out`);
+
+    for (const record of recordsToUndo) {
+      try {
+        // Remove the 18:15:out(OUT), from PunchRecords
+        const updatedPunchRecords = record.PunchRecords.replace(/18:15:out\(OUT\),/, '');
+        
+        await AttendanceLogForOutDuty.findByIdAndUpdate(
+          record._id,
+          {
+            $set: {
+              OutTime: "",
+              PunchRecords: updatedPunchRecords,
+              Duration: 0, // Reset duration since they're still working
+              updatedAt: new Date()
+            }
+          },
+          { new: true }
+        );
+
+        console.log(`Undid auto punch out for employee ${record.employeeId} - they are now punched in again`);
+      } catch (error) {
+        console.error(`Error undoing auto punch out for employee ${record.employeeId}:`, error);
+      }
+    }
+
+    console.log(`Undid auto punch outs for ${recordsToUndo.length} employees`);
+  } catch (error) {
+    console.error("Error in undoAutoPunchOuts:", error);
+    throw error;
+  }
+};
+
+// Manual endpoint to undo auto punch outs
+app.post("/api/undo-auto-punch-outs", async (req, res) => {
+  try {
+    console.log("Manual undo auto punch outs triggered...");
+    await undoAutoPunchOuts();
+    res.status(200).json({
+      message: "Auto punch outs undone successfully - employees are punched in again",
+      statusCode: 200,
+      statusValue: "success"
+    });
+  } catch (error) {
+    console.error("Error in undo auto punch outs:", error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      statusCode: 500,
+      statusValue: "error"
+    });
+  }
+});
+
+// Function to recalculate effective hours for all attendance records (optimized)
+const recalculateAllEffectiveHours = async () => {
+  try {
+    console.log("Recalculating effective hours for all attendance records...");
+    
+    // 1. Recalculate main attendance records in batches
+    console.log("Processing main attendance records...");
+    const BATCH_SIZE = 100;
+    let mainProcessed = 0;
+    let mainSkipped = 0;
+    
+    const mainCount = await AttendanceLogModel.countDocuments({
+      InTime: { $exists: true, $ne: "", $ne: "1900-01-01 00:00:00" },
+      OutTime: { $exists: true, $ne: "", $ne: "1900-01-01 00:00:00" }
+    });
+    
+    console.log(`Found ${mainCount} main attendance records to recalculate`);
+
+    for (let skip = 0; skip < mainCount; skip += BATCH_SIZE) {
+      const mainRecords = await AttendanceLogModel.find({
+        InTime: { $exists: true, $ne: "", $ne: "1900-01-01 00:00:00" },
+        OutTime: { $exists: true, $ne: "", $ne: "1900-01-01 00:00:00" }
+      }).skip(skip).limit(BATCH_SIZE).lean();
+
+      const bulkOps = [];
+      
+      for (const record of mainRecords) {
+        try {
+          // Calculate duration from InTime and OutTime
+          const inTime = moment(record.InTime, "YYYY-MM-DD HH:mm:ss");
+          const outTime = moment(record.OutTime, "YYYY-MM-DD HH:mm:ss");
+          
+          // Skip if dates are invalid
+          if (!inTime.isValid() || !outTime.isValid()) {
+            mainSkipped++;
+            continue;
+          }
+          
+          const duration = outTime.diff(inTime, "minutes");
+          
+          // Only update if duration is reasonable (between 0 and 1440 minutes = 24 hours)
+          if (duration >= 0 && duration <= 1440) {
+            bulkOps.push({
+              updateOne: {
+                filter: { _id: record._id },
+                update: {
+                  $set: {
+                    Duration: duration,
+                    updatedAt: new Date()
+                  }
+                }
+              }
+            });
+          } else {
+            mainSkipped++;
+          }
+        } catch (error) {
+          console.error(`Error processing main record ${record._id}:`, error);
+          mainSkipped++;
+        }
+      }
+
+      if (bulkOps.length > 0) {
+        await AttendanceLogModel.bulkWrite(bulkOps);
+        mainProcessed += bulkOps.length;
+        console.log(`Processed ${mainProcessed}/${mainCount} main records...`);
+      }
+    }
+
+    // 2. Recalculate out-duty records in batches
+    console.log("Processing out-duty records...");
+    let outDutyProcessed = 0;
+    let outDutySkipped = 0;
+    
+    const outDutyCount = await AttendanceLogForOutDuty.countDocuments({
+      InTime: { $exists: true, $ne: "" },
+      OutTime: { $exists: true, $ne: "" }
+    });
+    
+    console.log(`Found ${outDutyCount} out-duty records to recalculate`);
+
+    for (let skip = 0; skip < outDutyCount; skip += BATCH_SIZE) {
+      const outDutyRecords = await AttendanceLogForOutDuty.find({
+        InTime: { $exists: true, $ne: "" },
+        OutTime: { $exists: true, $ne: "" }
+      }).skip(skip).limit(BATCH_SIZE).lean();
+
+      const bulkOps = [];
+      
+      for (const record of outDutyRecords) {
+        try {
+          // Calculate duration from InTime and OutTime
+          const inTime = moment(record.InTime, "YYYY-MM-DD HH:mm:ss");
+          const outTime = moment(record.OutTime, "YYYY-MM-DD HH:mm:ss");
+          
+          // Skip if dates are invalid
+          if (!inTime.isValid() || !outTime.isValid()) {
+            outDutySkipped++;
+            continue;
+          }
+          
+          const duration = outTime.diff(inTime, "minutes");
+          
+          // Only update if duration is reasonable (between 0 and 1440 minutes = 24 hours)
+          if (duration >= 0 && duration <= 1440) {
+            bulkOps.push({
+              updateOne: {
+                filter: { _id: record._id },
+                update: {
+                  $set: {
+                    Duration: duration,
+                    updatedAt: new Date()
+                  }
+                }
+              }
+            });
+          } else {
+            outDutySkipped++;
+          }
+        } catch (error) {
+          console.error(`Error processing out-duty record ${record._id}:`, error);
+          outDutySkipped++;
+        }
+      }
+
+      if (bulkOps.length > 0) {
+        await AttendanceLogForOutDuty.bulkWrite(bulkOps);
+        outDutyProcessed += bulkOps.length;
+        console.log(`Processed ${outDutyProcessed}/${outDutyCount} out-duty records...`);
+      }
+    }
+
+    console.log(`Recalculation completed: ${mainProcessed} main records and ${outDutyProcessed} out-duty records updated. Skipped: ${mainSkipped} main, ${outDutySkipped} out-duty`);
+  } catch (error) {
+    console.error("Error in recalculateAllEffectiveHours:", error);
+    throw error;
+  }
+};
+
+// Manual endpoint to recalculate all effective hours (runs in background)
+app.post("/api/recalculate-all-effective-hours", async (req, res) => {
+  try {
+    console.log("Manual recalculate all effective hours triggered...");
+    
+    // Respond immediately and run job in background
+    res.status(202).json({
+      message: "Effective hours recalculation started in background",
+      statusCode: 202,
+      statusValue: "ACCEPTED"
+    });
+    
+    // Run the recalculation in background
+    recalculateAllEffectiveHours().catch(error => {
+      console.error("Background effective hours recalculation failed:", error);
+    });
+    
+  } catch (error) {
+    console.error("Error starting effective hours recalculation:", error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      statusCode: 500,
+      statusValue: "error"
+    });
+  }
 });
 
 const normalizeLeaveHistoryEmployeeIds = async () => {

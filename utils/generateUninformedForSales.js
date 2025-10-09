@@ -60,7 +60,7 @@ const generateUninformedForSales = async () => {
                 leaveEndDate: date,
                 totalDays: '1',
                 reason: 'This is system-generated leave',
-                approvedBy: empDataMap[String(employeeId)]?.managerId || 'System',
+                approvedBy: (employeeId ? empDataMap[String(employeeId)]?.managerId : null) || 'System',
                 status: 'Approved',
                 dateTime,
                 approvedDateTime: dateTime,

@@ -10,6 +10,12 @@ const deleteUninformedLeaves = async () => {
     const toDelete = [];
 
     for (const leave of leaveTakenData) {
+      // Check for null values before comparison
+      if (!leave.employeeId || !leave.leaveStartDate) {
+        console.warn(`Skipping leave record with null employeeId or leaveStartDate:`, leave);
+        continue;
+      }
+      
       const match = trackolapData.find(attendance =>
         attendance.employeeId === leave.employeeId &&
         attendance.date === leave.leaveStartDate

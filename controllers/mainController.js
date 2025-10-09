@@ -574,6 +574,12 @@ const generateUninformedLeave = async (req, res) => {
 
     // Remove duplicate attendance records Absent
     const uniqueRecords = dataResult.reduce((acc, record) => {
+      // Check for null values before processing
+      if (!record.AttendanceDate || !record.EmployeeCode) {
+        console.warn(`Skipping record with null AttendanceDate or EmployeeCode:`, record);
+        return acc;
+      }
+      
       const uniqueKey = `${record.AttendanceDate.toISOString()}_${record.EmployeeCode}`;
       if (!acc.seen.has(uniqueKey)) {
         acc.seen.add(uniqueKey);
@@ -597,10 +603,13 @@ const generateUninformedLeave = async (req, res) => {
     // Create employee-manager map
     const employeeManagerMap = new Map();
     employeesData.forEach(emp => {
-      employeeManagerMap.set(emp.employeeId.toString(), {
-        managerId: emp.managerId,
-        workingDays: emp.workingDays
-      });
+      // Check for null employeeId before processing
+      if (emp.employeeId) {
+        employeeManagerMap.set(emp.employeeId.toString(), {
+          managerId: emp.managerId,
+          workingDays: emp.workingDays
+        });
+      }
     });
 
     // Fetch leave history (Approved)
@@ -613,15 +622,19 @@ const generateUninformedLeave = async (req, res) => {
     const notMatchingLeaves = uniqueRecords
       .filter(attendance => {
         return !leaveData.some(leave => {
+          // Check for null values before comparison
+          if (!leave.employeeId || !attendance.EmployeeCode) {
+            return false;
+          }
           return (
-            leave.employeeId.toString() === attendance.EmployeeCode &&
+            leave.employeeId.toString() === attendance.EmployeeCode.toString() &&
             attendance.AttendanceDate >= leave.leaveStartDate &&
             attendance.AttendanceDate <= leave.leaveEndDate
           );
         });
       })
       .map(attendance => {
-        const employeeData = employeeManagerMap.get(attendance.EmployeeCode.toString()) || {};
+        const employeeData = employeeManagerMap.get(attendance.EmployeeCode?.toString()) || {};
         return {
           ...attendance.toObject(),
           managerId: employeeData.managerId || null,
@@ -689,6 +702,12 @@ const generateUninformedLeave = async (req, res) => {
 
     // Create uninformed leave records
     const leaveRecords = filteredData.map(attendance => {
+      // Check for null AttendanceDate before processing
+      if (!attendance.AttendanceDate) {
+        console.warn(`Skipping attendance record with null AttendanceDate:`, attendance);
+        return null;
+      }
+      
       const attendanceDate = attendance.AttendanceDate.toISOString().split("T")[0];
       const totalDays =
         attendance.Duration < 240 ? "1" :
@@ -708,7 +727,7 @@ const generateUninformedLeave = async (req, res) => {
         dateTime,
         approvedDateTime: dateTime
       };
-    });
+    }).filter(record => record !== null); // Remove null records
     // console.log(11, leaveRecords)
   
     // Insert into MongoDB
