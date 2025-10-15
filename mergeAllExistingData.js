@@ -382,17 +382,39 @@ const mergeAllExistingData = async () => {
     }
     
     // Final summary
+    const summary = {
+      totalOutDutyRecords: allOutDutyRecords.length,
+      updatedExistingRecords: updatedCount,
+      newlyCreatedRecords: createdCount,
+      skippedAlreadyMerged: skippedCount,
+      totalProcessed: updatedCount + createdCount,
+      coveragePercentage: ((updatedCount + createdCount) / allOutDutyRecords.length * 100).toFixed(1)
+    };
+    
     console.log("\n🎉 COMPREHENSIVE MERGE COMPLETED SUCCESSFULLY!");
     console.log("=".repeat(80));
-    console.log(`📊 Total Out-Duty Records: ${allOutDutyRecords.length}`);
-    console.log(`✅ Updated Existing Records: ${updatedCount}`);
-    console.log(`🆕 Newly Created Records: ${createdCount}`);
-    console.log(`⏭️ Skipped (Already Merged): ${skippedCount}`);
-    console.log(`📈 Total Processed: ${updatedCount + createdCount}`);
-    console.log(`🎯 Coverage: ${((updatedCount + createdCount) / allOutDutyRecords.length * 100).toFixed(1)}%`);
+    console.log(`📊 Total Out-Duty Records: ${summary.totalOutDutyRecords}`);
+    console.log(`✅ Updated Existing Records: ${summary.updatedExistingRecords}`);
+    console.log(`🆕 Newly Created Records: ${summary.newlyCreatedRecords}`);
+    console.log(`⏭️ Skipped (Already Merged): ${summary.skippedAlreadyMerged}`);
+    console.log(`📈 Total Processed: ${summary.totalProcessed}`);
+    console.log(`🎯 Coverage: ${summary.coveragePercentage}%`);
     
-    // Show final statistics
-    await showFinalStatistics();
+    // Get final statistics
+    const finalStats = await showFinalStatistics();
+    
+    return {
+      summary,
+      finalStatistics: finalStats,
+      logs: [
+        "🚀 STARTING COMPREHENSIVE MERGE OF ALL EXISTING DATA",
+        "🎯 GOAL: Merge ALL out-duty records with ALL attendance logs",
+        `📊 Found ${allOutDutyRecords.length} out-duty records to process`,
+        `📊 Found ${allAttendanceLogs.length} existing attendance logs`,
+        `✅ Successfully processed ${bulkOps.length} operations`,
+        "🎉 COMPREHENSIVE MERGE COMPLETED SUCCESSFULLY!"
+      ]
+    };
     
   } catch (error) {
     console.error("❌ Error in comprehensive merge process:", error);
@@ -441,15 +463,25 @@ const showFinalStatistics = async () => {
     
     // Get duration statistics
     const durations = mergedRecords.map(r => r.Duration).filter(d => d > 0);
+    let durationStats = null;
     if (durations.length > 0) {
       const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
       const minDuration = Math.min(...durations);
       const maxDuration = Math.max(...durations);
       
+      durationStats = {
+        average: Math.round(avgDuration),
+        averageFormatted: `${Math.round(avgDuration / 60)}h ${Math.round(avgDuration % 60)}m`,
+        minimum: minDuration,
+        minimumFormatted: `${Math.round(minDuration / 60)}h ${Math.round(minDuration % 60)}m`,
+        maximum: maxDuration,
+        maximumFormatted: `${Math.round(maxDuration / 60)}h ${Math.round(maxDuration % 60)}m`
+      };
+      
       console.log("\n⏱️ Duration statistics:");
-      console.log(`   Average: ${Math.round(avgDuration)} minutes (${Math.round(avgDuration / 60)}h ${Math.round(avgDuration % 60)}m)`);
-      console.log(`   Minimum: ${minDuration} minutes (${Math.round(minDuration / 60)}h ${Math.round(minDuration % 60)}m)`);
-      console.log(`   Maximum: ${maxDuration} minutes (${Math.round(maxDuration / 60)}h ${Math.round(maxDuration % 60)}m)`);
+      console.log(`   Average: ${durationStats.average} minutes (${durationStats.averageFormatted})`);
+      console.log(`   Minimum: ${durationStats.minimum} minutes (${durationStats.minimumFormatted})`);
+      console.log(`   Maximum: ${durationStats.maximum} minutes (${durationStats.maximumFormatted})`);
     }
     
     // Get source breakdown
@@ -463,6 +495,19 @@ const showFinalStatistics = async () => {
     for (const [source, count] of Object.entries(sourceCounts)) {
       console.log(`   ${source}: ${count} records`);
     }
+    
+    // Return structured data
+    return {
+      totalMergedRecords: mergedRecords.length,
+      uniqueEmployeesWithMergedRecords: uniqueEmployees.length,
+      dateRange: {
+        earliest: sortedDates[0],
+        latest: sortedDates[sortedDates.length - 1]
+      },
+      statusBreakdown: statusCounts,
+      sourceBreakdown: sourceCounts,
+      durationStatistics: durationStats
+    };
     
   } catch (error) {
     console.error("❌ Error showing statistics:", error);

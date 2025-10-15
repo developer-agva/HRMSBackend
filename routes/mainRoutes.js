@@ -18,7 +18,9 @@ const {
     getAllOutDutyRecords,
     updateLocation,
     saveEmpLocation,
-    recalculateDuration
+    recalculateDuration,
+    triggerMergeAllExistingData,
+    getMergeResults
 } = require('../controllers/mainController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
@@ -58,7 +60,7 @@ router.post('/punch-out/:id', punchOutForOutDuty);
 router.put('/update-location/:id', updateLocation);
 router.get('/get-log-records/:employeeId', getAttendanceLogForOutDutyById);
 router.get('/get-all-punch-records/:employeeId', getAllPunchRecordsForOutDuty);
-router.get('/get-all-out-duty-records', authMiddleware, getAllOutDutyRecords);
+router.get('/get-all-out-duty-records', getAllOutDutyRecords);
 router.post('/save-emp-location', saveEmpLocation);
 router.post('/recalculate-duration/:id', recalculateDuration);
 
@@ -66,6 +68,10 @@ router.post('/recalculate-duration/:id', recalculateDuration);
 
 router.post('/save-salary-data', createEmployeeSalary);
 router.get('/all-employee-salary-data', authMiddleware, getAllEmployeeSalaries);
+
+// Merge operations routes
+router.post('/merge-all-existing-data', triggerMergeAllExistingData);
+router.get('/merge-results', getMergeResults);
 
 // router.get('/punchTime',getPunchTimeDetails);  // temp-used
 

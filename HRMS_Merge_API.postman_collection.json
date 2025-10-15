@@ -1,0 +1,159 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		"name": "HRMS Merge API Collection",
+		"description": "Collection for HRMS Merge All Existing Data API endpoints with actual data records",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Merge Operations",
+			"item": [
+				{
+					"name": "Trigger Merge All Existing Data",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/merge-all-existing-data",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"merge-all-existing-data"
+							]
+						},
+						"description": "Triggers the comprehensive merge process and returns current status with actual data records. No authentication required. Returns immediately with real data samples."
+					},
+					"response": [
+						{
+							"name": "Merge Status Retrieved",
+							"originalRequest": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{base_url}}/api/merge-all-existing-data",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"merge-all-existing-data"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"statusCode\": 200,\n    \"statusValue\": \"SUCCESS\",\n    \"message\": \"Merge status retrieved successfully\",\n    \"timestamp\": \"{{$timestamp}}\",\n    \"data\": {\n        \"summary\": {\n            \"totalOutDutyRecords\": {{$randomInt}},\n            \"totalAttendanceLogs\": {{$randomInt}},\n            \"totalEmployees\": {{$randomInt}},\n            \"existingMergedRecords\": {{$randomInt}},\n            \"recordsToProcess\": {{$randomInt}},\n            \"coveragePercentage\": \"{{$randomFloat}}%\"\n        },\n        \"actualData\": {\n            \"outDutyRecords\": [\n                {\n                    \"_id\": \"{{$randomObjectId}}\",\n                    \"employeeId\": \"{{$randomInt}}\",\n                    \"AttendanceDate\": \"{{$isoTimestamp}}\",\n                    \"location\": \"{{$randomLocation}}\",\n                    \"InTime\": \"{{$randomTime}}\",\n                    \"OutTime\": \"{{$randomTime}}\",\n                    \"PunchRecords\": \"{{$randomTime}}:in(IN),{{$randomTime}}:out(OUT),\",\n                    \"imageUrl\": \"\",\n                    \"Status\": \"{{$randomWord}}\",\n                    \"Duration\": \"{{$randomInt}}\",\n                    \"createdAt\": \"{{$isoTimestamp}}\",\n                    \"updatedAt\": \"{{$isoTimestamp}}\",\n                    \"__v\": 0\n                }\n            ],\n            \"mergedRecords\": [\n                {\n                    \"_id\": \"{{$randomObjectId}}\",\n                    \"AttendanceDate\": \"{{$isoTimestamp}}\",\n                    \"AttendanceLogId\": {{$randomInt}},\n                    \"EmployeeId\": {{$randomInt}},\n                    \"EmployeeName\": \"{{$randomFirstName}} {{$randomLastName}}\",\n                    \"EmployeeCode\": \"{{$randomInt}}\",\n                    \"InTime\": \"{{$randomTime}}\",\n                    \"OutTime\": \"{{$randomTime}}\",\n                    \"Duration\": {{$randomInt}},\n                    \"Status\": \"{{$randomWord}}\",\n                    \"DurationSource\": \"Office + Out Duty\",\n                    \"PunchRecords\": \"{{$randomTime}}:in(IN),{{$randomTime}}:in(IN),{{$randomTime}}:out(OUT),{{$randomTime}}:in(IN),{{$randomTime}}:out(OUT), || OUT-DUTY: {{$randomTime}}:in(IN),\",\n                    \"Location\": \"{{$randomLocation}}\"\n                }\n            ],\n            \"employees\": [\n                {\n                    \"_id\": \"{{$randomObjectId}}\",\n                    \"employeeId\": \"{{$randomInt}}\",\n                    \"employeeName\": \"{{$randomFirstName}} {{$randomLastName}}\",\n                    \"employeeCode\": \"{{$randomInt}}\",\n                    \"designation\": \"{{$randomJobTitle}}\",\n                    \"departmentId\": \"{{$randomWord}}\",\n                    \"contactNo\": \"{{$randomPhoneNumber}}\",\n                    \"email\": \"{{$randomEmail}}\",\n                    \"work_outside\": {{$randomBoolean}},\n                    \"role\": \"{{$randomWord}}\"\n                }\n            ]\n        },\n        \"logs\": [\n            \"📊 MERGE STATUS SUMMARY\",\n            \"📈 Total Out-Duty Records: {{$randomInt}}\",\n            \"✅ Already Merged Records: {{$randomInt}}\",\n            \"⏳ Records to Process: {{$randomInt}}\",\n            \"🎯 Current Coverage: {{$randomFloat}}%\",\n            \"⚠️ Some records still need merging\"\n        ],\n        \"recommendation\": \"Run the full merge process to process remaining records\"\n    }\n}"
+						}
+					]
+				},
+				{
+					"name": "Get Merge Results",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/merge-results",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"merge-results"
+							]
+						},
+						"description": "Retrieves comprehensive statistics and actual data records of the merge process including summary counts, date ranges, status breakdown, duration statistics, and real attendance/employee data."
+					},
+					"response": [
+						{
+							"name": "Merge Results Retrieved",
+							"originalRequest": {
+								"method": "GET",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"url": {
+									"raw": "{{base_url}}/api/merge-results",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"merge-results"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"statusCode\": 200,\n    \"statusValue\": \"SUCCESS\",\n    \"message\": \"Merge results fetched successfully\",\n    \"data\": {\n        \"summary\": {\n            \"totalOutDutyRecords\": {{$randomInt}},\n            \"totalAttendanceLogs\": {{$randomInt}},\n            \"totalEmployees\": {{$randomInt}},\n            \"mergedRecords\": {{$randomInt}},\n            \"uniqueEmployeesWithMergedRecords\": {{$randomInt}},\n            \"coveragePercentage\": \"{{$randomFloat}}\"\n        },\n        \"actualData\": {\n            \"outDutyRecords\": [\n                {\n                    \"_id\": \"{{$randomObjectId}}\",\n                    \"employeeId\": \"{{$randomInt}}\",\n                    \"AttendanceDate\": \"{{$isoTimestamp}}\",\n                    \"location\": \"{{$randomLocation}}\",\n                    \"InTime\": \"{{$randomTime}}\",\n                    \"OutTime\": \"{{$randomTime}}\",\n                    \"PunchRecords\": \"{{$randomTime}}:in(IN),{{$randomTime}}:out(OUT),\",\n                    \"Status\": \"{{$randomWord}}\",\n                    \"Duration\": \"{{$randomInt}}\"\n                }\n            ],\n            \"mergedRecords\": [\n                {\n                    \"_id\": \"{{$randomObjectId}}\",\n                    \"EmployeeId\": {{$randomInt}},\n                    \"EmployeeName\": \"{{$randomFirstName}} {{$randomLastName}}\",\n                    \"AttendanceDate\": \"{{$isoTimestamp}}\",\n                    \"InTime\": \"{{$randomTime}}\",\n                    \"OutTime\": \"{{$randomTime}}\",\n                    \"Duration\": {{$randomInt}},\n                    \"Status\": \"{{$randomWord}}\",\n                    \"DurationSource\": \"Office + Out Duty\",\n                    \"PunchRecords\": \"{{$randomTime}}:in(IN),{{$randomTime}}:in(IN),{{$randomTime}}:out(OUT),{{$randomTime}}:in(IN),{{$randomTime}}:out(OUT), || OUT-DUTY: {{$randomTime}}:in(IN),\"\n                }\n            ],\n            \"allAttendanceRecords\": [\n                {\n                    \"_id\": \"{{$randomObjectId}}\",\n                    \"EmployeeId\": {{$randomInt}},\n                    \"EmployeeName\": \"{{$randomFirstName}} {{$randomLastName}}\",\n                    \"AttendanceDate\": \"{{$isoTimestamp}}\",\n                    \"InTime\": \"{{$randomTime}}\",\n                    \"OutTime\": \"{{$randomTime}}\",\n                    \"Duration\": {{$randomInt}},\n                    \"Status\": \"{{$randomWord}}\"\n                }\n            ],\n            \"employees\": [\n                {\n                    \"_id\": \"{{$randomObjectId}}\",\n                    \"employeeId\": \"{{$randomInt}}\",\n                    \"employeeName\": \"{{$randomFirstName}} {{$randomLastName}}\",\n                    \"designation\": \"{{$randomJobTitle}}\",\n                    \"departmentId\": \"{{$randomWord}}\",\n                    \"contactNo\": \"{{$randomPhoneNumber}}\",\n                    \"email\": \"{{$randomEmail}}\",\n                    \"work_outside\": {{$randomBoolean}}\n                }\n            ]\n        },\n        \"dateRange\": {\n            \"earliest\": \"{{$isoTimestamp}}\",\n            \"latest\": \"{{$isoTimestamp}}\"\n        },\n        \"statusBreakdown\": {\n            \"Full Day\": {{$randomInt}},\n            \"Absent\": {{$randomInt}},\n            \"Half Day\": {{$randomInt}},\n            \"Present \": {{$randomInt}},\n            \" ½Present \": {{$randomInt}}\n        },\n        \"sourceBreakdown\": {\n            \"Office + Out Duty\": {{$randomInt}}\n        },\n        \"durationStatistics\": {\n            \"average\": {{$randomInt}},\n            \"minimum\": {{$randomInt}},\n            \"maximum\": {{$randomInt}},\n            \"total\": {{$randomInt}}\n        },\n        \"lastUpdated\": \"{{$isoTimestamp}}\"\n    }\n}"
+						}
+					]
+				}
+			],
+			"description": "Endpoints for merging out-duty records with attendance logs and retrieving comprehensive data"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3001",
+			"type": "string"
+		}
+	]
+}

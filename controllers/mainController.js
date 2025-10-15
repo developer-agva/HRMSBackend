@@ -2766,6 +2766,285 @@ const recalculateDuration = async (req, res) => {
   }
 };
 
+/**
+ * Trigger merge of all existing data (POST endpoint)
+ */
+const triggerMergeAllExistingData = async (req, res) => {
+  try {
+    console.log("🚀 API: Starting comprehensive merge of all existing data");
+    
+    // Import required models
+    const AttendanceLogModel = require('../models/attendanceLogModel');
+    const AttendanceLogForOutDutyModel = require('../models/attendanceLogModelForOutDuty');
+    const EmployeeModel = require('../models/employeeModel');
+    
+    // Get actual data records
+    const outDutyRecords = await AttendanceLogForOutDutyModel.find({}).limit(10).lean();
+    const mergedRecords = await AttendanceLogModel.find({
+      $or: [
+        { DurationSource: "Office + Out Duty" },
+        { DurationSource: "Out Duty Only" }
+      ]
+    }).limit(10).lean();
+    const employees = await EmployeeModel.find({}).limit(10).lean();
+    
+    // Get counts
+    const totalOutDutyRecords = await AttendanceLogForOutDutyModel.countDocuments();
+    const totalAttendanceLogs = await AttendanceLogModel.countDocuments();
+    const totalEmployees = await EmployeeModel.countDocuments();
+    const existingMergedRecords = await AttendanceLogModel.countDocuments({
+      $or: [
+        { DurationSource: "Office + Out Duty" },
+        { DurationSource: "Out Duty Only" }
+      ]
+    });
+    
+    // Calculate what needs to be processed
+    const recordsToProcess = totalOutDutyRecords - existingMergedRecords;
+    const coveragePercentage = totalOutDutyRecords > 0 ? 
+      ((existingMergedRecords / totalOutDutyRecords) * 100).toFixed(1) : 0;
+    
+    // Return response with actual data
+    res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Merge status retrieved successfully",
+      timestamp: new Date().toISOString(),
+      data: {
+        summary: {
+          totalOutDutyRecords,
+          totalAttendanceLogs,
+          totalEmployees,
+          existingMergedRecords,
+          recordsToProcess,
+          coveragePercentage: coveragePercentage + "%"
+        },
+        actualData: {
+          outDutyRecords: outDutyRecords,
+          mergedRecords: mergedRecords,
+          employees: employees
+        },
+        logs: [
+          "📊 MERGE STATUS SUMMARY",
+          `📈 Total Out-Duty Records: ${totalOutDutyRecords}`,
+          `✅ Already Merged Records: ${existingMergedRecords}`,
+          `⏳ Records to Process: ${recordsToProcess}`,
+          `🎯 Current Coverage: ${coveragePercentage}%`,
+          recordsToProcess > 0 ? "⚠️ Some records still need merging" : "🎉 All records are already merged!"
+        ],
+        recommendation: recordsToProcess > 0 ? 
+          "Run the full merge process to process remaining records" : 
+          "All out-duty records are already merged with attendance logs"
+      }
+    });
+    
+    // Start background merge process
+    if (recordsToProcess > 0) {
+      console.log("🔄 Starting background merge for remaining records");
+      const { mergeAllExistingData } = require('../mergeAllExistingData');
+      mergeAllExistingData().catch(error => {
+        console.error("❌ Background merge process failed:", error);
+      });
+    }
+    
+  } catch (error) {
+    console.error("❌ Error in merge process:", error);
+    return res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to get merge status",
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+};
+
+/**
+ * Get merge results and statistics (GET endpoint)
+ */
+const getMergeResults = async (req, res) => {
+  try {
+    console.log("📊 API: Fetching merge results and statistics");
+    
+    // Import the statistics function
+    const { showFinalStatistics } = require('../mergeAllExistingData');
+    
+    // Get basic counts first
+    const AttendanceLogModel = require('../models/attendanceLogModel');
+    const AttendanceLogForOutDutyModel = require('../models/attendanceLogModelForOutDuty');
+    const EmployeeModel = require('../models/employeeModel');
+    
+    // Get actual data records (limit to 20 for performance)
+    const outDutyRecords = await AttendanceLogForOutDutyModel.find({}).limit(20).lean();
+    const mergedRecords = await AttendanceLogModel.find({
+      $or: [
+        { DurationSource: "Office + Out Duty" },
+        { DurationSource: "Out Duty Only" }
+      ]
+    }).limit(20).lean();
+    const allAttendanceRecords = await AttendanceLogModel.find({}).limit(20).lean();
+    const employees = await EmployeeModel.find({}).limit(20).lean();
+    
+    // Get counts
+    const totalOutDutyRecords = await AttendanceLogForOutDutyModel.countDocuments();
+    const totalAttendanceLogs = await AttendanceLogModel.countDocuments();
+    const totalEmployees = await EmployeeModel.countDocuments();
+    
+    // Get merged records count
+    const mergedRecordsCount = await AttendanceLogModel.countDocuments({
+      $or: [
+        { DurationSource: "Office + Out Duty" },
+        { DurationSource: "Out Duty Only" }
+      ]
+    });
+    
+    // Get unique employees with merged records
+    const uniqueEmployeesWithMergedRecords = await AttendanceLogModel.distinct('EmployeeId', {
+      $or: [
+        { DurationSource: "Office + Out Duty" },
+        { DurationSource: "Out Duty Only" }
+      ]
+    });
+    
+    // Get date range of merged records
+    const dateRange = await AttendanceLogModel.aggregate([
+      {
+        $match: {
+          $or: [
+            { DurationSource: "Office + Out Duty" },
+            { DurationSource: "Out Duty Only" }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          minDate: { $min: "$AttendanceDate" },
+          maxDate: { $max: "$AttendanceDate" }
+        }
+      }
+    ]);
+    
+    // Get status breakdown
+    const statusBreakdown = await AttendanceLogModel.aggregate([
+      {
+        $match: {
+          $or: [
+            { DurationSource: "Office + Out Duty" },
+            { DurationSource: "Out Duty Only" }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: "$Status",
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      }
+    ]);
+    
+    // Get source breakdown
+    const sourceBreakdown = await AttendanceLogModel.aggregate([
+      {
+        $match: {
+          $or: [
+            { DurationSource: "Office + Out Duty" },
+            { DurationSource: "Out Duty Only" }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: "$DurationSource",
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      }
+    ]);
+    
+    // Get duration statistics
+    const durationStats = await AttendanceLogModel.aggregate([
+      {
+        $match: {
+          $or: [
+            { DurationSource: "Office + Out Duty" },
+            { DurationSource: "Out Duty Only" }
+          ],
+          Duration: { $gt: 0 }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          avgDuration: { $avg: "$Duration" },
+          minDuration: { $min: "$Duration" },
+          maxDuration: { $max: "$Duration" },
+          totalDuration: { $sum: "$Duration" }
+        }
+      }
+    ]);
+    
+    // Prepare response
+    const results = {
+      summary: {
+        totalOutDutyRecords,
+        totalAttendanceLogs,
+        totalEmployees,
+        mergedRecords: mergedRecordsCount,
+        uniqueEmployeesWithMergedRecords: uniqueEmployeesWithMergedRecords.length,
+        coveragePercentage: totalOutDutyRecords > 0 ? 
+          ((mergedRecordsCount / totalOutDutyRecords) * 100).toFixed(1) : 0
+      },
+      actualData: {
+        outDutyRecords: outDutyRecords,
+        mergedRecords: mergedRecords,
+        allAttendanceRecords: allAttendanceRecords,
+        employees: employees
+      },
+      dateRange: dateRange.length > 0 ? {
+        earliest: dateRange[0].minDate,
+        latest: dateRange[0].maxDate
+      } : null,
+      statusBreakdown: statusBreakdown.reduce((acc, item) => {
+        acc[item._id || 'Unknown'] = item.count;
+        return acc;
+      }, {}),
+      sourceBreakdown: sourceBreakdown.reduce((acc, item) => {
+        acc[item._id || 'Unknown'] = item.count;
+        return acc;
+      }, {}),
+      durationStatistics: durationStats.length > 0 ? {
+        average: Math.round(durationStats[0].avgDuration),
+        minimum: durationStats[0].minDuration,
+        maximum: durationStats[0].maxDuration,
+        total: durationStats[0].totalDuration
+      } : null,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    return res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Merge results fetched successfully",
+      data: results
+    });
+    
+  } catch (error) {
+    console.error("❌ Error fetching merge results:", error);
+    return res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to fetch merge results",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createAttendanceLogForOutDuty,
   punchOutForOutDuty,
@@ -2785,5 +3064,7 @@ module.exports = {
   getAllOutDutyRecords,
   updateLocation,
   saveEmpLocation,
-  recalculateDuration
+  recalculateDuration,
+  triggerMergeAllExistingData,
+  getMergeResults
 };
