@@ -1,0 +1,470 @@
+{
+	"info": {
+		"_postman_id": "hrms-punch-api-collection",
+		"name": "HRMS Punch API Collection",
+		"description": "Complete collection for HRMS Punch In/Out, Get Records, Recalculation, and Merge APIs",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Punch Operations",
+			"item": [
+				{
+					"name": "Punch In",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"employeeId\": \"12345\",\n  \"location\": \"Office, Building A, Floor 3\",\n  \"imageUrl\": \"https://example.com/image.jpg\",\n  \"InTime\": \"2025-01-15 09:00:00\",\n  \"AttendanceDate\": \"2025-01-15\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/punch-in",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"punch-in"
+							]
+						},
+						"description": "Create a new attendance log for punch in or append to existing one"
+					},
+					"response": []
+				},
+				{
+					"name": "Punch Out",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"location\": \"Office, Building A, Floor 3\",\n  \"OutTime\": \"2025-01-15 17:00:00\",\n  \"updatedAt\": \"2025-01-15T17:00:00.000Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/punch-out/:id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"punch-out",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "507f1f77bcf86cd799439011",
+									"description": "Attendance log ID"
+								}
+							]
+						},
+						"description": "Record punch out for an attendance log by ID"
+					},
+					"response": []
+				}
+			],
+			"description": "Punch In and Punch Out operations"
+		},
+		{
+			"name": "Get Punch Records",
+			"item": [
+				{
+					"name": "Get All Punch Records (Authenticated)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"description": "JWT token required"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/punch-records?employee_id=12345",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"punch-records"
+							],
+							"query": [
+								{
+									"key": "employee_id",
+									"value": "12345",
+									"description": "Filter by employee ID (optional)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get all punch records from PunchRecord collection. Requires JWT authentication."
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Punch Records for Employee",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/get-all-punch-records/:employeeId",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"get-all-punch-records",
+								":employeeId"
+							],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "12345",
+									"description": "Employee ID (required)"
+								}
+							]
+						},
+						"description": "Get ALL punch records for a specific employee from out-duty attendance logs. Returns all records sorted by creation date (newest first). No pagination - returns all records for the employee."
+					},
+					"response": [
+						{
+							"name": "Success Response",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/get-all-punch-records/12345",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"get-all-punch-records",
+										"12345"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"message\": \"Attendance log fetched successfully\",\n  \"statusCode\": 200,\n  \"statusValue\": \"SUCCESS\",\n  \"data\": [\n    {\n      \"_id\": \"507f1f77bcf86cd799439011\",\n      \"employeeId\": \"12345\",\n      \"AttendanceDate\": \"2025-01-15T00:00:00.000Z\",\n      \"InTime\": \"2025-01-15 09:00:00\",\n      \"OutTime\": \"2025-01-15 17:00:00\",\n      \"PunchRecords\": \"09:00:in(IN),17:00:out(OUT),\",\n      \"location\": \"Office||Client Site\",\n      \"Duration\": 480,\n      \"imageUrl\": \"https://example.com/image.jpg\",\n      \"createdAt\": \"2025-01-15T09:00:00.000Z\",\n      \"updatedAt\": \"2025-01-15T17:00:00.000Z\"\n    },\n    {\n      \"_id\": \"507f1f77bcf86cd799439012\",\n      \"employeeId\": \"12345\",\n      \"AttendanceDate\": \"2025-01-14T00:00:00.000Z\",\n      \"InTime\": \"2025-01-14 09:15:00\",\n      \"OutTime\": \"2025-01-14 18:00:00\",\n      \"PunchRecords\": \"09:15:in(IN),13:00:out(OUT),14:00:in(IN),18:00:out(OUT),\",\n      \"location\": \"Office\",\n      \"Duration\": 525,\n      \"imageUrl\": \"NA\",\n      \"createdAt\": \"2025-01-14T09:15:00.000Z\",\n      \"updatedAt\": \"2025-01-14T18:00:00.000Z\"\n    }\n  ]\n}"
+						},
+						{
+							"name": "No Records Found",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/api/get-all-punch-records/99999",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"api",
+										"get-all-punch-records",
+										"99999"
+									]
+								}
+							},
+							"status": "Bad Request",
+							"code": 400,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n  \"message\": \"Attendance log not found.\",\n  \"statusCode\": 400,\n  \"statusValue\": \"FAIL\"\n}"
+						}
+					]
+				},
+				{
+					"name": "Get All Out-Duty Records (Paginated)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/get-all-out-duty-records?page=1&limit=10&employeeId=12345&dateFrom=2025-01-01&dateTo=2025-01-31",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"get-all-out-duty-records"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (default: 1)",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Records per page (default: 10)",
+									"disabled": true
+								},
+								{
+									"key": "employeeId",
+									"value": "12345",
+									"description": "Filter by employee ID (optional)",
+									"disabled": true
+								},
+								{
+									"key": "dateFrom",
+									"value": "2025-01-01",
+									"description": "Start date filter (optional)",
+									"disabled": true
+								},
+								{
+									"key": "dateTo",
+									"value": "2025-01-31",
+									"description": "End date filter (optional)",
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "",
+									"description": "Filter by status (optional)",
+									"disabled": true
+								},
+								{
+									"key": "source",
+									"value": "",
+									"description": "Filter by source (optional)",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get all out-duty records with pagination and filtering options"
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Out-Duty Records (No Pagination)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/get-all-out-duty-records?all=true",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"get-all-out-duty-records"
+							],
+							"query": [
+								{
+									"key": "all",
+									"value": "true",
+									"description": "Get all records without pagination"
+								}
+							]
+						},
+						"description": "Get all out-duty records without pagination. Use with caution for large datasets."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Today's Log Record",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/get-log-records/:employeeId",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"get-log-records",
+								":employeeId"
+							],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "12345",
+									"description": "Employee ID (required)"
+								}
+							]
+						},
+						"description": "Get today's attendance log for a specific employee"
+					},
+					"response": []
+				}
+			],
+			"description": "Various endpoints to retrieve punch records"
+		},
+		{
+			"name": "Attendance Recalculation",
+			"item": [
+				{
+					"name": "Recalculate Duration for Specific Record",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/recalculate-duration/:id",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"recalculate-duration",
+								":id"
+							],
+							"variable": [
+								{
+									"key": "id",
+									"value": "507f1f77bcf86cd799439011",
+									"description": "Attendance log ID (required)"
+								}
+							]
+						},
+						"description": "Recalculate duration for a specific attendance log based on punch records. Supports work_outside flag logic."
+					},
+					"response": []
+				},
+				{
+					"name": "Recalculate Durations (18:15:00 Records)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/recalculate-durations",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"recalculate-durations"
+							]
+						},
+						"description": "Recalculate durations for all records with OutTime set to 18:15:00"
+					},
+					"response": []
+				},
+				{
+					"name": "Recalculate All Effective Hours",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/recalculate-all-effective-hours",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"recalculate-all-effective-hours"
+							]
+						},
+						"description": "Recalculate effective hours for all attendance records. Runs in background. Returns 202 Accepted immediately."
+					},
+					"response": []
+				}
+			],
+			"description": "APIs for recalculating attendance durations"
+		},
+		{
+			"name": "Attendance Merge",
+			"item": [
+				{
+					"name": "Trigger Merge All Existing Data",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/merge-all-existing-data",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"merge-all-existing-data"
+							]
+						},
+						"description": "Trigger merge process and get current status. Merges out-duty records with attendance logs. Starts background merge process automatically if records need processing."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Merge Results",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/merge-results",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"merge-results"
+							]
+						},
+						"description": "Get comprehensive merge results and statistics including summary counts, date ranges, status breakdown, duration statistics, and actual data records."
+					},
+					"response": []
+				}
+			],
+			"description": "APIs for merging attendance data"
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://13.238.116.26:3001",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string",
+			"description": "JWT token for authenticated endpoints"
+		}
+	]
+}
+

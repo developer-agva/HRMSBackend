@@ -131,38 +131,52 @@ const findBestMatchingAttendanceLog = async (outDutyRecord, allAttendanceLogs) =
   const normalizedOutDutyEmployeeId = normalizeEmployeeId(outDutyRecord.employeeId);
   const outDutyDate = normalizeDate(outDutyRecord.AttendanceDate);
   
+  // Skip if employee ID is null/undefined
+  if (!normalizedOutDutyEmployeeId) {
+    return null;
+  }
+  
   // Phase 1: Exact match (EmployeeCode + Date)
-  let exactMatch = allAttendanceLogs.find(log => 
-    normalizeEmployeeId(log.EmployeeCode) === normalizedOutDutyEmployeeId &&
-    normalizeDate(log.AttendanceDate) === outDutyDate
-  );
+  let exactMatch = allAttendanceLogs.find(log => {
+    const logEmployeeCode = normalizeEmployeeId(log.EmployeeCode);
+    const logDate = normalizeDate(log.AttendanceDate);
+    return logEmployeeCode && logEmployeeCode === normalizedOutDutyEmployeeId && logDate === outDutyDate;
+  });
   
   if (exactMatch) {
     return { match: exactMatch, type: 'exact' };
   }
   
   // Phase 2: EmployeeId match + Date
-  exactMatch = allAttendanceLogs.find(log => 
-    normalizeEmployeeId(log.EmployeeId) === normalizedOutDutyEmployeeId &&
-    normalizeDate(log.AttendanceDate) === outDutyDate
-  );
+  exactMatch = allAttendanceLogs.find(log => {
+    const logEmployeeId = normalizeEmployeeId(log.EmployeeId);
+    const logDate = normalizeDate(log.AttendanceDate);
+    return logEmployeeId && logEmployeeId === normalizedOutDutyEmployeeId && logDate === outDutyDate;
+  });
   
   if (exactMatch) {
     return { match: exactMatch, type: 'exact_employee_id' };
   }
   
   // Phase 3: Same EmployeeCode, nearest date within ±7 days
-  const sameEmployeeLogs = allAttendanceLogs.filter(log => 
-    normalizeEmployeeId(log.EmployeeCode) === normalizedOutDutyEmployeeId
-  );
+  const sameEmployeeLogs = allAttendanceLogs.filter(log => {
+    const logEmployeeCode = normalizeEmployeeId(log.EmployeeCode);
+    return logEmployeeCode && logEmployeeCode === normalizedOutDutyEmployeeId;
+  });
   
   if (sameEmployeeLogs.length > 0) {
     const outDutyDateTime = new Date(outDutyRecord.AttendanceDate);
+    if (isNaN(outDutyDateTime.getTime())) {
+      return null; // Invalid date
+    }
+    
     let nearestMatch = null;
     let minDaysDiff = Infinity;
     
     for (const log of sameEmployeeLogs) {
       const logDateTime = new Date(log.AttendanceDate);
+      if (isNaN(logDateTime.getTime())) continue;
+      
       const daysDiff = Math.abs((outDutyDateTime - logDateTime) / (1000 * 60 * 60 * 24));
       
       if (daysDiff <= 7 && daysDiff < minDaysDiff) {
@@ -177,17 +191,24 @@ const findBestMatchingAttendanceLog = async (outDutyRecord, allAttendanceLogs) =
   }
   
   // Phase 4: Same EmployeeId, nearest date within ±7 days
-  const sameEmployeeIdLogs = allAttendanceLogs.filter(log => 
-    normalizeEmployeeId(log.EmployeeId) === normalizedOutDutyEmployeeId
-  );
+  const sameEmployeeIdLogs = allAttendanceLogs.filter(log => {
+    const logEmployeeId = normalizeEmployeeId(log.EmployeeId);
+    return logEmployeeId && logEmployeeId === normalizedOutDutyEmployeeId;
+  });
   
   if (sameEmployeeIdLogs.length > 0) {
     const outDutyDateTime = new Date(outDutyRecord.AttendanceDate);
+    if (isNaN(outDutyDateTime.getTime())) {
+      return null; // Invalid date
+    }
+    
     let nearestMatch = null;
     let minDaysDiff = Infinity;
     
     for (const log of sameEmployeeIdLogs) {
       const logDateTime = new Date(log.AttendanceDate);
+      if (isNaN(logDateTime.getTime())) continue;
+      
       const daysDiff = Math.abs((outDutyDateTime - logDateTime) / (1000 * 60 * 60 * 24));
       
       if (daysDiff <= 7 && daysDiff < minDaysDiff) {
@@ -207,23 +228,34 @@ const findBestMatchingAttendanceLog = async (outDutyRecord, allAttendanceLogs) =
 /**
  * Creates a new attendance log from out-duty record
  */
-const createNewAttendanceLogFromOutDuty = (outDutyRecord, workOutside) => {
+const createNewAttendanceLogFromOutDuty = (outDutyRecord, workOutside, employeeInfo = null) => {
   const outDutyDuration = calculateDurationFromTimes(outDutyRecord.InTime, outDutyRecord.OutTime) ||
                          calculateDurationFromPunchRecords(outDutyRecord.PunchRecords, outDutyRecord.AttendanceDate) ||
                          parseDurationToMinutes(outDutyRecord.Duration);
   
+  // Get employee ID as number
+  const employeeIdNum = parseInt(outDutyRecord.employeeId) || (typeof outDutyRecord.employeeId === 'number' ? outDutyRecord.employeeId : 0);
+  
+  // Generate a unique AttendanceLogId (using timestamp + employeeId)
+  const attendanceLogId = Date.now() % 1000000000 + employeeIdNum;
+  
   const newAttendanceLog = {
-    EmployeeId: parseInt(outDutyRecord.employeeId) || outDutyRecord.employeeId,
+    EmployeeId: employeeIdNum,
     EmployeeCode: outDutyRecord.employeeId.toString(),
-    EmployeeName: `Employee ${outDutyRecord.employeeId}`,
+    EmployeeName: employeeInfo?.name || employeeInfo?.employeeName || `Employee ${outDutyRecord.employeeId}`,
+    Gender: employeeInfo?.gender || "Not Specified",
+    CategoryId: employeeInfo?.categoryId || employeeInfo?.CategoryId || 1,
+    AttendanceLogId: attendanceLogId,
     AttendanceDate: new Date(outDutyRecord.AttendanceDate),
+    ShiftId: employeeInfo?.shiftId || employeeInfo?.ShiftId || 1,
     Duration: outDutyDuration,
     Status: determineStatus(outDutyDuration),
+    StatusCode: determineStatus(outDutyDuration) === "Full Day" ? "P" : determineStatus(outDutyDuration) === "Half Day" ? "HD" : "A",
     DurationSource: "Out Duty Only",
     WorkOutside: !!workOutside,
     MergedOn: new Date(),
-    InTime: outDutyRecord.InTime || null,
-    OutTime: outDutyRecord.OutTime || null,
+    InTime: outDutyRecord.InTime || "1900-01-01 00:00:00",
+    OutTime: outDutyRecord.OutTime || "1900-01-01 00:00:00",
     PunchRecords: outDutyRecord.PunchRecords || "",
     Location: outDutyRecord.location || "",
     Present: 1,
@@ -286,10 +318,6 @@ const mergeAllExistingData = async () => {
     // Get ALL out-duty records (no date restrictions)
     const allOutDutyRecords = await AttendanceLogForOutDutyModel.find({}).lean();
     console.log(`📊 Found ${allOutDutyRecords.length} out-duty records to process`);
-    
-    // Get ALL attendance logs (no date restrictions)
-    const allAttendanceLogs = await AttendanceLogModel.find({}).lean();
-    console.log(`📊 Found ${allAttendanceLogs.length} existing attendance logs`);
 
     // Build a set of employees who have work_outside = true (by both employeeId and employeeCode)
     const outsideEmployees = await EmployeeModel.find({ work_outside: true }).select('employeeId employeeCode').lean();
@@ -299,86 +327,186 @@ const mergeAllExistingData = async () => {
       if (emp.employeeCode) workOutsideSet.add(String(emp.employeeCode));
     }
     
+    // Build employee lookup map for creating new attendance logs
+    const allEmployees = await EmployeeModel.find({}).select('employeeId employeeCode name employeeName gender categoryId CategoryId shiftId ShiftId').lean();
+    const employeeMap = new Map();
+    for (const emp of allEmployees) {
+      const key1 = emp.employeeId ? String(emp.employeeId) : null;
+      const key2 = emp.employeeCode ? String(emp.employeeCode) : null;
+      if (key1) employeeMap.set(key1, emp);
+      if (key2) employeeMap.set(key2, emp);
+    }
+    
+    // Track processed out-duty records to avoid duplicates
+    const processedOutDutyIds = new Set();
+    
     let updatedCount = 0;
     let createdCount = 0;
     let processedCount = 0;
     let skippedCount = 0;
-    const bulkOps = [];
+    const BATCH_SIZE = 100; // Process in batches to reload attendance logs
     
-    console.log("\n🔄 Processing each out-duty record...");
+    console.log("\n🔄 Processing out-duty records in batches...");
     
-    for (const outDutyRecord of allOutDutyRecords) {
-      processedCount++;
+    // Process in batches
+    for (let i = 0; i < allOutDutyRecords.length; i += BATCH_SIZE) {
+      const batch = allOutDutyRecords.slice(i, i + BATCH_SIZE);
+      const bulkOps = [];
       
-      // Skip records with null/undefined employee IDs
-      if (!outDutyRecord.employeeId) {
-        console.log(`⚠️ ${processedCount}/${allOutDutyRecords.length}: Skipped record with null employeeId`);
-        continue;
-      }
+      // Reload attendance logs at the start of each batch to include newly created records
+      const allAttendanceLogs = await AttendanceLogModel.find({}).lean();
+      console.log(`\n📊 Batch ${Math.floor(i / BATCH_SIZE) + 1}: Processing ${batch.length} records (Total attendance logs: ${allAttendanceLogs.length})`);
       
-      const normalizedEmployeeId = normalizeEmployeeId(outDutyRecord.employeeId);
-      const normalizedDate = normalizeDate(outDutyRecord.AttendanceDate);
-      
-      // Find best matching attendance log
-      const matchResult = await findBestMatchingAttendanceLog(outDutyRecord, allAttendanceLogs);
-      
-      if (matchResult) {
-        // Check if this record is already merged
-        const existingDurationSource = matchResult.match.DurationSource;
-        if (existingDurationSource && existingDurationSource.includes("Out Duty")) {
+      for (const outDutyRecord of batch) {
+        processedCount++;
+        
+        // Skip records with null/undefined employee IDs
+        if (!outDutyRecord.employeeId) {
           skippedCount++;
-          console.log(`⏭️ ${processedCount}/${allOutDutyRecords.length}: Skipped EmployeeId ${normalizedEmployeeId} for ${normalizedDate} (already merged)`);
+          console.log(`⚠️ ${processedCount}/${allOutDutyRecords.length}: Skipped record with null employeeId`);
           continue;
         }
         
-        // Update existing attendance log
-        const workOutside = workOutsideSet.has(String(outDutyRecord.employeeId));
-        const updatedLog = updateAttendanceLogWithOutDuty(matchResult.match, outDutyRecord, workOutside);
+        // Create unique key for this out-duty record
+        const outDutyKey = `${normalizeEmployeeId(outDutyRecord.employeeId)}_${normalizeDate(outDutyRecord.AttendanceDate)}_${outDutyRecord._id}`;
         
-        bulkOps.push({
-          updateOne: {
-            filter: { _id: matchResult.match._id },
-            update: { $set: updatedLog }
+        // Skip if already processed
+        if (processedOutDutyIds.has(outDutyKey)) {
+          skippedCount++;
+          continue;
+        }
+        
+        const normalizedEmployeeId = normalizeEmployeeId(outDutyRecord.employeeId);
+        const normalizedDate = normalizeDate(outDutyRecord.AttendanceDate);
+        
+        // Find best matching attendance log
+        const matchResult = await findBestMatchingAttendanceLog(outDutyRecord, allAttendanceLogs);
+        
+        if (matchResult) {
+          // Check if this specific out-duty record is already merged
+          // We check if the attendance log already has this out-duty's data
+          const existingPunchRecords = matchResult.match.PunchRecords || '';
+          const outDutyPunchRecords = outDutyRecord.PunchRecords || '';
+          const existingLocation = matchResult.match.Location || '';
+          const outDutyLocation = outDutyRecord.location || '';
+          
+          // Check if this out-duty record's data is already in the attendance log
+          // We check both punch records and location to be more reliable
+          const punchRecordsMatch = outDutyPunchRecords && 
+            (existingPunchRecords.includes(outDutyPunchRecords) || 
+             existingPunchRecords.includes(`OUT-DUTY: ${outDutyPunchRecords}`));
+          const locationMatch = outDutyLocation && 
+            (existingLocation.includes(outDutyLocation) || 
+             existingLocation.includes(`OUT-DUTY: ${outDutyLocation}`));
+          
+          // Only skip if we're confident this exact record was already merged
+          // (both punch records and location match, or punch records are substantial and match)
+          if (punchRecordsMatch && (locationMatch || outDutyPunchRecords.length > 20)) {
+            skippedCount++;
+            processedOutDutyIds.add(outDutyKey);
+            console.log(`⏭️ ${processedCount}/${allOutDutyRecords.length}: Skipped EmployeeId ${normalizedEmployeeId} for ${normalizedDate} (already merged in attendance log)`);
+            continue;
           }
-        });
-        
-        updatedCount++;
-        
-        const outDutyDuration = calculateDurationFromTimes(outDutyRecord.InTime, outDutyRecord.OutTime) ||
-                               calculateDurationFromPunchRecords(outDutyRecord.PunchRecords, outDutyRecord.AttendanceDate) ||
-                               parseDurationToMinutes(outDutyRecord.Duration);
-        
-        console.log(`✅ ${processedCount}/${allOutDutyRecords.length}: Updated EmployeeId ${normalizedEmployeeId} for ${normalizedDate} (${matchResult.type}${matchResult.daysDiff ? `, ${matchResult.daysDiff.toFixed(1)} days diff` : ''})`);
-        console.log(`   ${matchResult.match.Duration || 0} + ${outDutyDuration} = ${updatedLog.Duration} minutes (${updatedLog.Status})`);
-        
-      } else {
-        // Create new attendance log
-        const workOutside = workOutsideSet.has(String(outDutyRecord.employeeId));
-        const newAttendanceLog = createNewAttendanceLogFromOutDuty(outDutyRecord, workOutside);
-        
-        bulkOps.push({
-          insertOne: {
-            document: newAttendanceLog
+          
+          // Update existing attendance log
+          const workOutside = workOutsideSet.has(String(outDutyRecord.employeeId));
+          const updatedLog = updateAttendanceLogWithOutDuty(matchResult.match, outDutyRecord, workOutside);
+          
+          bulkOps.push({
+            updateOne: {
+              filter: { _id: matchResult.match._id },
+              update: { $set: updatedLog }
+            }
+          });
+          
+          updatedCount++;
+          processedOutDutyIds.add(outDutyKey);
+          
+          const outDutyDuration = calculateDurationFromTimes(outDutyRecord.InTime, outDutyRecord.OutTime) ||
+                                 calculateDurationFromPunchRecords(outDutyRecord.PunchRecords, outDutyRecord.AttendanceDate) ||
+                                 parseDurationToMinutes(outDutyRecord.Duration);
+          
+          console.log(`✅ ${processedCount}/${allOutDutyRecords.length}: Updated EmployeeId ${normalizedEmployeeId} for ${normalizedDate} (${matchResult.type}${matchResult.daysDiff ? `, ${matchResult.daysDiff.toFixed(1)} days diff` : ''})`);
+          console.log(`   ${matchResult.match.Duration || 0} + ${outDutyDuration} = ${updatedLog.Duration} minutes (${updatedLog.Status})`);
+          
+        } else {
+          // Check if we already created a record for this employee/date in this batch
+          const employeeDateKey = `${normalizedEmployeeId}_${normalizedDate}`;
+          const alreadyCreatedInBatch = bulkOps.some(op => {
+            if (op.insertOne) {
+              const doc = op.insertOne.document;
+              const docKey = `${normalizeEmployeeId(doc.EmployeeCode || doc.EmployeeId)}_${normalizeDate(doc.AttendanceDate)}`;
+              return docKey === employeeDateKey;
+            }
+            return false;
+          });
+          
+          if (alreadyCreatedInBatch) {
+            // Find the newly created record in bulkOps and update it instead
+            const insertOpIndex = bulkOps.findIndex(op => {
+              if (op.insertOne) {
+                const doc = op.insertOne.document;
+                const docKey = `${normalizeEmployeeId(doc.EmployeeCode || doc.EmployeeId)}_${normalizeDate(doc.AttendanceDate)}`;
+                return docKey === employeeDateKey;
+              }
+              return false;
+            });
+            
+            if (insertOpIndex !== -1) {
+              // Update the existing insert operation to merge durations
+              const existingDoc = bulkOps[insertOpIndex].insertOne.document;
+              const outDutyDuration = calculateDurationFromTimes(outDutyRecord.InTime, outDutyRecord.OutTime) ||
+                                     calculateDurationFromPunchRecords(outDutyRecord.PunchRecords, outDutyRecord.AttendanceDate) ||
+                                     parseDurationToMinutes(outDutyRecord.Duration);
+              
+              existingDoc.Duration = (existingDoc.Duration || 0) + outDutyDuration;
+              existingDoc.Status = determineStatus(existingDoc.Duration);
+              existingDoc.DurationSource = "Out Duty Only";
+              existingDoc.PunchRecords = existingDoc.PunchRecords ? 
+                `${existingDoc.PunchRecords}, ${outDutyRecord.PunchRecords || ''}` : 
+                outDutyRecord.PunchRecords || "";
+              existingDoc.Location = existingDoc.Location ? 
+                `${existingDoc.Location} || ${outDutyRecord.location || ''}` : 
+                outDutyRecord.location || "";
+              
+              processedOutDutyIds.add(outDutyKey);
+              console.log(`🔄 ${processedCount}/${allOutDutyRecords.length}: Merged additional out-duty for EmployeeId ${normalizedEmployeeId} on ${normalizedDate}`);
+              continue;
+            }
           }
-        });
-        
-        createdCount++;
-        
-        console.log(`🆕 ${processedCount}/${allOutDutyRecords.length}: Created new attendance log for EmployeeId ${normalizedEmployeeId} on ${normalizedDate}`);
-        console.log(`   Duration: ${newAttendanceLog.Duration} minutes (${newAttendanceLog.Status})`);
+          
+          // Create new attendance log
+          const workOutside = workOutsideSet.has(String(outDutyRecord.employeeId));
+          const employeeInfo = employeeMap.get(String(outDutyRecord.employeeId)) || employeeMap.get(normalizeEmployeeId(outDutyRecord.employeeId));
+          const newAttendanceLog = createNewAttendanceLogFromOutDuty(outDutyRecord, workOutside, employeeInfo);
+          
+          bulkOps.push({
+            insertOne: {
+              document: newAttendanceLog
+            }
+          });
+          
+          createdCount++;
+          processedOutDutyIds.add(outDutyKey);
+          
+          console.log(`🆕 ${processedCount}/${allOutDutyRecords.length}: Created new attendance log for EmployeeId ${normalizedEmployeeId} on ${normalizedDate}`);
+          console.log(`   Duration: ${newAttendanceLog.Duration} minutes (${newAttendanceLog.Status})`);
+        }
       }
       
-      // Progress update every 50 records
-      if (processedCount % 50 === 0) {
-        console.log(`📈 Progress: ${processedCount}/${allOutDutyRecords.length} processed`);
+      // Execute bulk operations for this batch
+      if (bulkOps.length > 0) {
+        try {
+          await AttendanceLogModel.bulkWrite(bulkOps, { ordered: false });
+          console.log(`✅ Batch ${Math.floor(i / BATCH_SIZE) + 1}: Successfully processed ${bulkOps.length} operations`);
+        } catch (error) {
+          console.error(`❌ Batch ${Math.floor(i / BATCH_SIZE) + 1}: Error in bulk write:`, error.message);
+          // Continue with next batch even if this one fails
+        }
       }
-    }
-    
-    console.log("\n🔄 Executing bulk operations...");
-    
-    if (bulkOps.length > 0) {
-      await AttendanceLogModel.bulkWrite(bulkOps, { ordered: false });
-      console.log(`✅ Successfully processed ${bulkOps.length} operations`);
+      
+      // Progress update
+      console.log(`📈 Overall Progress: ${processedCount}/${allOutDutyRecords.length} processed (${((processedCount / allOutDutyRecords.length) * 100).toFixed(1)}%)`);
     }
     
     // Final summary
@@ -403,6 +531,9 @@ const mergeAllExistingData = async () => {
     // Get final statistics
     const finalStats = await showFinalStatistics();
     
+    // Get final count of attendance logs
+    const finalAttendanceLogCount = await AttendanceLogModel.countDocuments({});
+    
     return {
       summary,
       finalStatistics: finalStats,
@@ -410,8 +541,8 @@ const mergeAllExistingData = async () => {
         "🚀 STARTING COMPREHENSIVE MERGE OF ALL EXISTING DATA",
         "🎯 GOAL: Merge ALL out-duty records with ALL attendance logs",
         `📊 Found ${allOutDutyRecords.length} out-duty records to process`,
-        `📊 Found ${allAttendanceLogs.length} existing attendance logs`,
-        `✅ Successfully processed ${bulkOps.length} operations`,
+        `📊 Final attendance logs count: ${finalAttendanceLogCount}`,
+        `✅ Successfully processed ${updatedCount + createdCount} operations`,
         "🎉 COMPREHENSIVE MERGE COMPLETED SUCCESSFULLY!"
       ]
     };
