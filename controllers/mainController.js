@@ -1409,10 +1409,13 @@ const getAttendanceLogsByEmployeeId = async (req, res) => {
     // const getEmp = await employeeModel.find({employeeId:req.query.employeeId})
     // console.log(11, getEmp)
 
+    // Convert employeeId to number for EmployeeId field comparison
+    const employeeIdNum = !isNaN(employeeId) ? parseInt(employeeId) : null;
+
     // Build the filter object for MongoDB query
     let filter = {
       $or: [
-        { EmployeeId: employeeId },
+        ...(employeeIdNum !== null ? [{ EmployeeId: employeeIdNum }] : []),
         { EmployeeCode: employeeId }
       ],
       AttendanceDate: { $lte: dateTo }
@@ -1423,25 +1426,74 @@ const getAttendanceLogsByEmployeeId = async (req, res) => {
       filter.AttendanceDate.$gte = dateFrom;
     }
 
+    // Calculate priority score: higher score = better record
+    // This function prioritizes records with actual attendance data
+    const getPriority = (rec) => {
+      let priority = 0;
+      // Prioritize Present status over Absent
+      if (rec.Status && rec.Status.trim().toLowerCase() === "present") priority += 100;
+      // Prioritize records with Duration > 0
+      if (rec.Duration && rec.Duration > 0) priority += 50;
+      // Prioritize records with PunchRecords
+      if (rec.PunchRecords && rec.PunchRecords.trim() !== "") priority += 30;
+      // Prioritize records with InTime/OutTime not default
+      if (rec.InTime && !rec.InTime.includes("1900-01-01")) priority += 20;
+      if (rec.OutTime && !rec.OutTime.includes("1900-01-01")) priority += 20;
+      // Prioritize more recently updated records
+      if (rec.updatedAt) priority += 10;
+      return priority;
+    };
+
     // MongoDB query to fetch attendance records with pagination and filters
+    // Increase limit before deduplication to ensure we get all records
     const dataResult = await AttendanceLogModel.find(filter)
       .skip(offset)
-      .limit(limit)
-      .sort({ AttendanceDate: -1 });
+      .limit(limit * 3) // Fetch more records to account for duplicates
+      .sort({ AttendanceDate: -1, updatedAt: -1 }); // Sort by date and update time to prioritize recent/updated records
+    
     // Remove duplicates based on AttendanceDate and EmployeeCode
+    // Prioritize records with actual attendance data (Present status, Duration > 0, PunchRecords not empty)
     const uniqueRecords = dataResult.reduce((acc, record) => {
       const uniqueKey = `${record.AttendanceDate.toISOString()}_${record.EmployeeCode}`;
-      if (!acc.seen.has(uniqueKey)) {
-        acc.seen.add(uniqueKey);
+      const existingRecord = acc.map.get(uniqueKey);
+      
+      if (!existingRecord) {
+        acc.map.set(uniqueKey, record);
         acc.filtered.push(record);
+      } else {
+        // If we have a duplicate, keep the one with higher priority
+        const existingPriority = getPriority(existingRecord);
+        const newPriority = getPriority(record);
+        
+        if (newPriority > existingPriority) {
+          // Replace the existing record with the better one
+          const index = acc.filtered.findIndex(r => 
+            r.AttendanceDate.toISOString() === record.AttendanceDate.toISOString() &&
+            r.EmployeeCode === record.EmployeeCode
+          );
+          if (index !== -1) {
+            acc.filtered[index] = record;
+            acc.map.set(uniqueKey, record);
+          }
+        }
       }
       return acc;
-    }, { seen: new Set(), filtered: [] }).filtered;
+    }, { map: new Map(), filtered: [] }).filtered;
+    
+    // Sort again and limit to requested page size
+    const sortedUniqueRecords = uniqueRecords
+      .sort((a, b) => {
+        // Sort by date descending, then by priority
+        const dateDiff = new Date(b.AttendanceDate) - new Date(a.AttendanceDate);
+        if (dateDiff !== 0) return dateDiff;
+        return getPriority(b) - getPriority(a);
+      })
+      .slice(0, limit);
 
     // get leave history
     const leaveData = await leaveTakenHistoryModel.find({ employeeId: employeeId, status: "Approved" }, { employeeId: 1, leaveType: 1, leaveStartDate: 1, leaveEndDate: 1 })
     // console.log(11, leaveData)
-    const finalResult = uniqueRecords.map(attendance => {
+    const finalResult = sortedUniqueRecords.map(attendance => {
       const attendanceObj = attendance.toObject();
       const matchingLeave = leaveData.find(leave => {
         const leaveStart = new Date(leave.leaveStartDate);
@@ -1467,11 +1519,24 @@ const getAttendanceLogsByEmployeeId = async (req, res) => {
       };
     });
     // console.log(11, finalResult)
-    // Get the total count of records for pagination metadata
-    const totalRecords = await AttendanceLogModel.countDocuments(filter);
+    // Get the total count of unique records for pagination metadata
+    // Use aggregation to count unique combinations of AttendanceDate and EmployeeCode efficiently
+    const uniqueCountResult = await AttendanceLogModel.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$AttendanceDate" } },
+            employeeCode: "$EmployeeCode"
+          }
+        }
+      },
+      { $count: "total" }
+    ]);
+    const totalRecords = uniqueCountResult.length > 0 ? uniqueCountResult[0].total : 0;
     const totalPages = Math.ceil(totalRecords / limit);
 
-    if (uniqueRecords.length > 0) {
+    if (sortedUniqueRecords.length > 0) {
       return res.status(200).json({
         statusCode: 200,
         statusValue: "SUCCESS",
