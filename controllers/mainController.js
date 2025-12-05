@@ -3205,6 +3205,36 @@ const triggerMergeAllExistingData = async (req, res) => {
 };
 
 /**
+ * Trigger attendance merge from out duty to main attendance log
+ */
+const triggerAttendanceMerge = async (req, res) => {
+  try {
+    console.log("🔄 API: Starting attendance merge from out duty to main attendance log");
+    
+    const { findCommonAttendanceAndUpdate } = require('../utils/attendanceMerger');
+    
+    // Run the merge function
+    await findCommonAttendanceAndUpdate();
+    
+    res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Attendance merge completed successfully. Out duty records have been merged into main attendance logs.",
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("❌ Error in triggerAttendanceMerge:", error);
+    res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to merge attendance records",
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+};
+
+/**
  * Get merge results and statistics (GET endpoint)
  */
 const getMergeResults = async (req, res) => {
@@ -3411,5 +3441,6 @@ module.exports = {
   saveEmpLocation,
   recalculateDuration,
   triggerMergeAllExistingData,
-  getMergeResults
+  getMergeResults,
+  triggerAttendanceMerge
 };

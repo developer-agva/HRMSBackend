@@ -198,6 +198,7 @@ async function findCommonAttendanceAndUpdate() {
     );
 
     // Step 4: Merge and update
+    let updateCount = 0;
     for (const outLog of outDutyLogs) {
       const outDate = new Date(outLog.AttendanceDate).toISOString().slice(0, 10);
       const empId = String(outLog.employeeId);
@@ -206,20 +207,39 @@ async function findCommonAttendanceAndUpdate() {
         const mainDate = new Date(mainLog.AttendanceDate).toISOString().slice(0, 10);
         return String(mainLog.EmployeeCode) === empId && mainDate === outDate;
       });
+      
+      if (!matchedMainLog) {
+        console.log(`⚠️ No matching main log found for employee ${empId} on ${outDate}`);
+        continue;
+      }
 
     
  if (matchedMainLog) {
-  const combinedPunchRecords = `${matchedMainLog.PunchRecords || ''}${outLog.PunchRecords || ''}`;
+  // Combine punch records - prioritize out duty records if main log has empty/invalid records
+  const mainPunchRecords = (matchedMainLog.PunchRecords || '').trim();
+  const outDutyPunchRecords = (outLog.PunchRecords || '').trim();
+  
+  // If main log has no valid punch records, use only out duty records
+  // Otherwise, combine both (out duty records will take precedence due to deduplication)
+  let combinedPunchRecords = '';
+  if (!mainPunchRecords || mainPunchRecords === '' || mainPunchRecords === 'null') {
+    combinedPunchRecords = outDutyPunchRecords;
+  } else {
+    combinedPunchRecords = `${mainPunchRecords},${outDutyPunchRecords}`;
+  }
 
   // Step 1: Normalize punches and remove duplicates
   const punchObjects = combinedPunchRecords
     .split(',')
     .map(p => {
-      const timeMatch = p.match(/^(\d{2}:\d{2})/); // Extract HH:mm
-      const typeMatch = p.match(/\b(in|out)\b/i); // Extract IN/OUT
+      const trimmed = p.trim();
+      if (!trimmed || trimmed === '') return null;
+      
+      const timeMatch = trimmed.match(/^(\d{2}:\d{2})/); // Extract HH:mm
+      const typeMatch = trimmed.match(/\b(in|out)\b/i); // Extract IN/OUT
       if (timeMatch && typeMatch) {
         return {
-          raw: p.trim(),
+          raw: trimmed,
           key: `${timeMatch[1]}_${typeMatch[1].toLowerCase()}`,
           time: moment(`${outDate} ${timeMatch[1]}`, 'YYYY-MM-DD HH:mm'),
           type: typeMatch[1].toLowerCase()
@@ -263,8 +283,45 @@ async function findCommonAttendanceAndUpdate() {
   }
 
   // Step 4: Determine earliest IN and latest OUT
-  const earliestIn = inTimes.length ? inTimes[0].format('YYYY-MM-DD HH:mm:00') : '';
-  const latestOut = outTimes.length ? outTimes[outTimes.length - 1].format('YYYY-MM-DD HH:mm:00') : '';
+  // If we couldn't calculate from punch records, use InTime/OutTime from out duty record
+  let earliestIn = inTimes.length ? inTimes[0].format('YYYY-MM-DD HH:mm:00') : '';
+  let latestOut = outTimes.length ? outTimes[outTimes.length - 1].format('YYYY-MM-DD HH:mm:00') : '';
+  
+  // If no valid times from punch records, use out duty InTime/OutTime if available
+  if (!earliestIn && outLog.InTime) {
+    const outInTime = String(outLog.InTime).trim();
+    if (outInTime && !outInTime.includes('1900-01-01') && outInTime !== '' && outInTime !== 'null') {
+      earliestIn = outInTime;
+    }
+  }
+  
+  if (!latestOut && outLog.OutTime) {
+    const outOutTime = String(outLog.OutTime).trim();
+    if (outOutTime && !outOutTime.includes('1900-01-01') && outOutTime !== '' && outOutTime !== 'null') {
+      latestOut = outOutTime;
+    }
+  }
+  
+  // If still no duration calculated from punch records, calculate from InTime/OutTime
+  if (effectiveMinutes === 0 && earliestIn && latestOut) {
+    try {
+      const inDate = moment(earliestIn, 'YYYY-MM-DD HH:mm:ss');
+      const outDate = moment(latestOut, 'YYYY-MM-DD HH:mm:ss');
+      if (inDate.isValid() && outDate.isValid() && outDate.isAfter(inDate)) {
+        effectiveMinutes = outDate.diff(inDate, 'minutes');
+      }
+    } catch (e) {
+      console.warn(`Could not calculate duration from InTime/OutTime for ${empId} on ${outDate}:`, e.message);
+    }
+  }
+  
+  // If out duty has Duration field and we still don't have a value, use it
+  if (effectiveMinutes === 0 && outLog.Duration) {
+    const outDutyDuration = parseInt(outLog.Duration);
+    if (!isNaN(outDutyDuration) && outDutyDuration > 0) {
+      effectiveMinutes = outDutyDuration;
+    }
+  }
 
   // Step 5: Update mainAttendanceLog with Status, Present, and Absent fields
   const newStatus = determineStatus(effectiveMinutes);
@@ -291,14 +348,19 @@ async function findCommonAttendanceAndUpdate() {
     }
   );
 
-  console.log(`✅ Updated ${empId} on ${outDate}: Duration = ${effectiveMinutes} mins, Status = ${newStatus}, InTime = ${earliestIn}, OutTime = ${latestOut}`);
+  updateCount++;
+  console.log(`✅ Updated ${empId} on ${outDate}: Duration = ${effectiveMinutes} mins, Status = ${newStatus}, InTime = ${earliestIn}, OutTime = ${latestOut}, PunchRecords = ${sortedPunches.map(p => p.raw).join(',')}`);
+} else {
+  console.log(`⚠️ No matching main log found for employee ${empId} on ${outDate}`);
 }
 
 
 
     }
+    
+    console.log(`✅ Merge completed. Total records processed: ${outDutyLogs.length}, Records updated: ${updateCount}`);
   } catch (error) {
-    console.error(" Error in findCommonAttendanceAndUpdate:", error);
+    console.error("❌ Error in findCommonAttendanceAndUpdate:", error);
     throw error;
   }
 }

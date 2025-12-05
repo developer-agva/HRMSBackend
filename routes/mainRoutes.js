@@ -20,7 +20,8 @@ const {
     saveEmpLocation,
     recalculateDuration,
     triggerMergeAllExistingData,
-    getMergeResults
+    getMergeResults,
+    triggerAttendanceMerge
 } = require('../controllers/mainController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
@@ -72,6 +73,7 @@ router.get('/all-employee-salary-data', authMiddleware, getAllEmployeeSalaries);
 // Merge operations routes
 router.post('/merge-all-existing-data', triggerMergeAllExistingData);
 router.get('/merge-results', getMergeResults);
+router.post('/merge-attendance-from-out-duty', triggerAttendanceMerge);
 
 // router.get('/punchTime',getPunchTimeDetails);  // temp-used
 
