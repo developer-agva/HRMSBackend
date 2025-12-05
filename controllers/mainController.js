@@ -567,9 +567,49 @@ const generateUninformedLeave = async (req, res) => {
         $lte: dateTo
       };
     }
-    // Fetch attendance records
+    // Fetch attendance records - include all fields needed for presence validation
     const dataResult = await AttendanceLogModel.find(filter, {
-      AttendanceDate: 1, EmployeeCode: 1, Duration: 1, Status: 1, EmployeeId: 1, InTime: 1
+      AttendanceDate: 1, 
+      EmployeeCode: 1, 
+      Duration: 1, 
+      Status: 1, 
+      EmployeeId: 1, 
+      InTime: 1,
+      OutTime: 1,
+      Present: 1,
+      Absent: 1,
+      PunchRecords: 1
+    });
+
+    // Also fetch out duty records for the same date range
+    // These may have attendance data even if main attendance log doesn't
+    // IMPORTANT: This fetches out duty records for ALL employees in the date range
+    const outDutyFilter = {};
+    if (dateFrom && dateTo) {
+      outDutyFilter.AttendanceDate = {
+        $gte: dateFrom,
+        $lte: dateTo
+      };
+    }
+    const outDutyRecords = await attendanceLogModelForOutDuty.find(outDutyFilter, {
+      employeeId: 1,
+      AttendanceDate: 1,
+      InTime: 1,
+      OutTime: 1,
+      PunchRecords: 1,
+      Duration: 1,
+      Status: 1
+    });
+
+    // Create a map of out duty records by employeeId + date for quick lookup
+    // This map contains out duty records for ALL employees, not just specific ones
+    const outDutyMap = new Map();
+    outDutyRecords.forEach(outDuty => {
+      const outDate = new Date(outDuty.AttendanceDate);
+      const dateKey = outDate.toISOString().split('T')[0]; // YYYY-MM-DD
+      // Convert employeeId to string for consistent matching with EmployeeCode
+      const mapKey = `${String(outDuty.employeeId || '')}_${dateKey}`;
+      outDutyMap.set(mapKey, outDuty);
     });
 
     // Remove duplicate attendance records Absent
@@ -612,13 +652,14 @@ const generateUninformedLeave = async (req, res) => {
       }
     });
 
-    // Fetch leave history (Approved)
+    // Fetch ALL leave history (Pending and Approved) - including uninformedLeave
+    // This ensures we don't create uninformed leave if ANY leave already exists for that day
     const leaveData = await leaveTakenHistoryModel.find(
       { $or: [{ status: "Pending" }, { status: "Approved" }] },
-      { employeeId: 1, leaveType: 1, leaveStartDate: 1, leaveEndDate: 1 }
+      { employeeId: 1, leaveType: 1, leaveStartDate: 1, leaveEndDate: 1, status: 1 }
     );
     //  console.log(uniqueRecords) 
-    // Filter records where leave does NOT match
+    // Filter records where leave does NOT match - exclude if ANY leave exists for that date
     const notMatchingLeaves = uniqueRecords
       .filter(attendance => {
         return !leaveData.some(leave => {
@@ -626,34 +667,240 @@ const generateUninformedLeave = async (req, res) => {
           if (!leave.employeeId || !attendance.EmployeeCode) {
             return false;
           }
+          
+          // Convert leave dates to Date objects for proper comparison
+          const leaveStart = new Date(leave.leaveStartDate);
+          const leaveEnd = new Date(leave.leaveEndDate);
+          const attendanceDate = new Date(attendance.AttendanceDate);
+          
+          // Normalize dates to start of day for accurate comparison
+          leaveStart.setHours(0, 0, 0, 0);
+          leaveEnd.setHours(23, 59, 59, 999);
+          attendanceDate.setHours(0, 0, 0, 0);
+          
+          // Check if employee matches and attendance date falls within leave date range
+          // This covers all leave types (including uninformedLeave, casualLeave, medicalLeave, etc.)
           return (
             leave.employeeId.toString() === attendance.EmployeeCode.toString() &&
-            attendance.AttendanceDate >= leave.leaveStartDate &&
-            attendance.AttendanceDate <= leave.leaveEndDate
+            attendanceDate >= leaveStart &&
+            attendanceDate <= leaveEnd
           );
         });
       })
       .map(attendance => {
         const employeeData = employeeManagerMap.get(attendance.EmployeeCode?.toString()) || {};
+        // Check out duty records for THIS employee and date
+        // This lookup happens for ALL employees - if out duty record exists, it will be attached
+        const attendanceDate = new Date(attendance.AttendanceDate);
+        const dateKey = attendanceDate.toISOString().split('T')[0]; // YYYY-MM-DD
+        // Convert EmployeeCode to string for consistent matching with out duty employeeId
+        const outDutyKey = `${String(attendance.EmployeeCode || '')}_${dateKey}`;
+        const outDutyRecord = outDutyMap.get(outDutyKey);
+        
         return {
           ...attendance.toObject(),
           managerId: employeeData.managerId || null,
-          workingDays: employeeData.workingDays || null
+          workingDays: employeeData.workingDays || null,
+          outDutyRecord: outDutyRecord || null // Attach out duty record if exists (for ALL employees)
         };
       });
     // console.log(11, notMatchingLeaves) 
 
     // Filter based on working hours and manager availability
+    // IMPORTANT: Only create uninformed leave for Absent records, NOT for Present records
     const filteredLeaves = notMatchingLeaves.filter(attendance => {
       if (attendance.managerId === null) return false;
 
-      // Check Duration
-      if (attendance.Duration < 500) return true;
+      let duration = attendance.Duration || 0;
+      
+      // PRIORITY 1: Check if employee has valid InTime and OutTime in main attendance log
+      // If Duration is 0 or missing but InTime/OutTime exist, calculate duration from them
+      let hasValidMainAttendance = false;
+      if (attendance.InTime && attendance.OutTime) {
+        // Handle both string and Date object formats
+        let inTimeStr = "";
+        let outTimeStr = "";
+        
+        if (attendance.InTime instanceof Date) {
+          inTimeStr = attendance.InTime.toISOString();
+        } else {
+          inTimeStr = String(attendance.InTime).trim();
+        }
+        
+        if (attendance.OutTime instanceof Date) {
+          outTimeStr = attendance.OutTime.toISOString();
+        } else {
+          outTimeStr = String(attendance.OutTime).trim();
+        }
+        
+        // Check if both InTime and OutTime are valid (not default/null/empty)
+        if (inTimeStr && 
+            outTimeStr && 
+            !inTimeStr.includes("1900-01-01") && 
+            !outTimeStr.includes("1900-01-01") &&
+            inTimeStr !== "" &&
+            outTimeStr !== "" &&
+            inTimeStr !== "null" &&
+            outTimeStr !== "null") {
+          // If Duration is 0 or missing, calculate it from InTime/OutTime
+          if (duration === 0 || !duration) {
+            try {
+              const inDate = new Date(inTimeStr);
+              const outDate = new Date(outTimeStr);
+              if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
+                duration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
+              }
+            } catch (e) {
+              // If date parsing fails, duration remains 0
+            }
+          }
+          
+          // Employee has valid check-in and check-out times - they were present
+          // If calculated duration >= 240 minutes, they worked at least half day
+          if (duration >= 240) {
+            return false; // Employee worked at least 4 hours, no uninformed leave needed
+          }
+          
+          // Even if duration is less than 240, if employee has valid InTime/OutTime, 
+          // they were physically present - don't create uninformed leave
+          // (They might have worked less than 4 hours but were still present)
+          hasValidMainAttendance = true;
+          return false; // Employee was present (has valid check-in/out), no uninformed leave needed
+        }
+      }
+      
+      // PRIORITY 1.5: Check out duty records for ALL employees
+      // If main attendance log doesn't have valid check-in/check-out data, 
+      // check out duty records to see if employee was present via out duty
+      // This check applies to ALL employees - if out duty record exists and shows presence,
+      // don't create uninformed leave regardless of what main attendance log shows
+      if (!hasValidMainAttendance && attendance.outDutyRecord) {
+        const outDuty = attendance.outDutyRecord;
+        
+        // Check if out duty has valid InTime/OutTime
+        let outDutyInTime = "";
+        let outDutyOutTime = "";
+        
+        if (outDuty.InTime) {
+          if (outDuty.InTime instanceof Date) {
+            outDutyInTime = outDuty.InTime.toISOString();
+          } else {
+            outDutyInTime = String(outDuty.InTime).trim();
+          }
+        }
+        
+        if (outDuty.OutTime) {
+          if (outDuty.OutTime instanceof Date) {
+            outDutyOutTime = outDuty.OutTime.toISOString();
+          } else {
+            outDutyOutTime = String(outDuty.OutTime).trim();
+          }
+        }
+        
+        // Check if out duty has valid check-in/out times
+        if (outDutyInTime && 
+            outDutyOutTime && 
+            !outDutyInTime.includes("1900-01-01") && 
+            !outDutyOutTime.includes("1900-01-01") &&
+            outDutyInTime !== "" &&
+            outDutyOutTime !== "" &&
+            outDutyInTime !== "null" &&
+            outDutyOutTime !== "null") {
+          
+          // Calculate duration from out duty if not available
+          let outDutyDuration = duration;
+          if (outDuty.Duration) {
+            outDutyDuration = parseInt(outDuty.Duration) || duration;
+          }
+          
+          if (outDutyDuration === 0 || !outDutyDuration) {
+            try {
+              const inDate = new Date(outDutyInTime);
+              const outDate = new Date(outDutyOutTime);
+              if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
+                outDutyDuration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
+              }
+            } catch (e) {
+              // If date parsing fails, duration remains 0
+            }
+          }
+          
+          // If out duty has valid data, employee was present
+          if (outDutyDuration >= 240) {
+            return false; // Employee worked at least 4 hours in out duty, no uninformed leave needed
+          }
+          
+          // Even if duration is less than 240, if out duty has valid InTime/OutTime, employee was present
+          return false; // Employee was present (has valid out duty check-in/out), no uninformed leave needed
+        }
+        
+        // Check out duty PunchRecords
+        if (outDuty.PunchRecords && outDuty.PunchRecords.trim() !== "") {
+          const punchStr = outDuty.PunchRecords.toLowerCase();
+          if (punchStr.includes("in(") && punchStr.includes("out(")) {
+            return false; // Employee has valid punch records in out duty, no uninformed leave needed
+          }
+        }
+        
+        // Check out duty Status
+        const outDutyStatus = (outDuty.Status || "").trim().toLowerCase();
+        if (outDutyStatus === "present" || outDutyStatus.includes("present")) {
+          return false; // Out duty shows employee was present, no uninformed leave needed
+        }
+        
+        // Check out duty Duration directly (if available)
+        if (outDuty.Duration) {
+          const outDutyDurationValue = parseInt(outDuty.Duration) || 0;
+          if (outDutyDurationValue >= 240) {
+            return false; // Out duty shows employee worked at least 4 hours, no uninformed leave needed
+          }
+        }
+      }
+      
+      // PRIORITY 2: Check Duration - if employee worked significant hours, they were present
+      // If Duration >= 240 minutes (4 hours), employee was at least half day present - no uninformed leave
+      if (duration >= 240) {
+        return false; // Employee worked at least 4 hours, no uninformed leave needed
+      }
 
-      // Parse InTime and compare
-      if (attendance.InTime) {
-        const inTimeStr = attendance.InTime.split(" ")[1]; // Get the time part
-        return inTimeStr > "09:15:59"; // Compare string times directly
+      // PRIORITY 3: Check Status field - if employee is Present/Full Day/Half Day, don't create uninformed leave
+      const status = (attendance.Status || "").trim().toLowerCase();
+      if (status === "present" || 
+          status === "full day" || 
+          status === "half day" || 
+          status.includes("present") || 
+          status.includes("full") || 
+          status.includes("half")) {
+        return false; // Employee was present, no uninformed leave needed
+      }
+      
+      // PRIORITY 4: Check Present field - if Present = 1, employee was present
+      if (attendance.Present === 1) {
+        return false; // Employee was marked as present, no uninformed leave needed
+      }
+      
+      // PRIORITY 5: Check Absent field - if Absent = 0, employee was not absent
+      if (attendance.Absent === 0) {
+        return false; // Employee was not marked as absent, no uninformed leave needed
+      }
+
+      // PRIORITY 6: Check PunchRecords - if employee has punch records, they were likely present
+      if (attendance.PunchRecords && attendance.PunchRecords.trim() !== "") {
+        // Check if punch records contain valid in/out punches
+        const punchStr = attendance.PunchRecords.toLowerCase();
+        if (punchStr.includes("in(") && punchStr.includes("out(")) {
+          return false; // Employee has valid punch records, no uninformed leave needed
+        }
+      }
+
+      // Only create uninformed leave if:
+      // - Duration < 240 minutes (less than 4 hours)
+      // - No valid InTime/OutTime
+      // - Status indicates Absent
+      // - Present = 0 and Absent = 1
+      // - No valid punch records
+      if (duration < 240) {
+        return true; // Employee worked less than 4 hours and all other checks failed - likely absent
       }
 
       return false;
@@ -735,27 +982,32 @@ const generateUninformedLeave = async (req, res) => {
       await leaveTakenHistoryModel.insertMany(leaveRecords);
     }
 
+    // After insertion, fetch ALL leaves again to check for overlaps
     const updatedLeaves = await leaveTakenHistoryModel.find(
-      {},
-      { employeeId: 1, leaveType: 1, leaveStartDate: 1, leaveEndDate: 1 }
+      { $or: [{ status: "Pending" }, { status: "Approved" }] },
+      { employeeId: 1, leaveType: 1, leaveStartDate: 1, leaveEndDate: 1, status: 1 }
     );
 
-    const leaveMap = new Map();
+    const allLeavesMap = new Map(); // Map to store ALL leave types (not just non-uninformedLeave)
     const uninformedLeaveMap = new Map();
     const leavesToDelete = [];
     
-    // Step 1: Store other leave types in a Map
+    // Step 1: Store ALL leave types in a Map (including uninformedLeave)
+    // This ensures we can check if ANY leave overlaps with uninformedLeave
     updatedLeaves.forEach(leave => {
       const key = `${leave.employeeId}`;
 
-      if (leave.leaveType !== "uninformedLeave") {
-        if (!leaveMap.has(key)) leaveMap.set(key, []);
-        leaveMap.get(key).push({
+      // Store all leaves (including uninformedLeave) for overlap checking
+      if (!allLeavesMap.has(key)) allLeavesMap.set(key, []);
+      allLeavesMap.get(key).push({
+        leaveType: leave.leaveType,
           startDate: new Date(leave.leaveStartDate),
           endDate: new Date(leave.leaveEndDate),
+        _id: leave._id
         });
-      } else {
-        // Collect uninformedLeave records separately
+      
+      // Also collect uninformedLeave records separately for cleanup
+      if (leave.leaveType === "uninformedLeave") {
         if (!uninformedLeaveMap.has(key)) uninformedLeaveMap.set(key, []);
         uninformedLeaveMap.get(key).push({
           _id: leave._id,
@@ -766,27 +1018,55 @@ const generateUninformedLeave = async (req, res) => {
     });
 
     // Step 2: Identify uninformedLeave records to delete
+    // Delete if they overlap with ANY other leave type (including other uninformedLeave)
     uninformedLeaveMap.forEach((uninformedLeaves, employeeId) => {
-      const existingLeaves = leaveMap.get(employeeId) || [];
+      const allLeavesForEmployee = allLeavesMap.get(employeeId) || [];
 
       // Sort uninformedLeave records by date to handle duplicates
       uninformedLeaves.sort((a, b) => a.startDate - b.startDate);
 
       const keptUninformedLeaves = [];
 
-      uninformedLeaves.forEach(leave => {
-        const startDate = leave.startDate;
-        const endDate = leave.endDate;
+      uninformedLeaves.forEach(uninformedLeave => {
+        // Create new Date objects to avoid mutating originals
+        const startDate = new Date(uninformedLeave.startDate);
+        const endDate = new Date(uninformedLeave.endDate);
+        
+        // Normalize dates for comparison
+        startDate.setHours(0, 0, 0, 0);
+        endDate.setHours(23, 59, 59, 999);
 
-        // Check if this uninformedLeave overlaps with an existing leave
-        const hasOverlap = existingLeaves.some(el => startDate >= el.startDate && endDate <= el.endDate);
+        // Check if this uninformedLeave overlaps with ANY other leave (including other uninformedLeave)
+        const hasOverlap = allLeavesForEmployee.some(otherLeave => {
+          // Skip if it's the same uninformedLeave record
+          if (otherLeave._id.toString() === uninformedLeave._id.toString()) {
+            return false;
+          }
+          
+          const otherStart = new Date(otherLeave.startDate);
+          const otherEnd = new Date(otherLeave.endDate);
+          otherStart.setHours(0, 0, 0, 0);
+          otherEnd.setHours(23, 59, 59, 999);
+          
+          // Check for ANY overlap: startDate <= otherEnd AND endDate >= otherStart
+          return startDate <= otherEnd && endDate >= otherStart;
+        });
 
-        if (hasOverlap || keptUninformedLeaves.some(existing => existing.startDate.getTime() === startDate.getTime())) {
+        // Also check for duplicate uninformedLeave on the same date
+        const isDuplicate = keptUninformedLeaves.some(existing => {
+          const existingStart = new Date(existing.startDate);
+          existingStart.setHours(0, 0, 0, 0);
+          const normalizedStart = new Date(startDate);
+          normalizedStart.setHours(0, 0, 0, 0);
+          return existingStart.getTime() === normalizedStart.getTime();
+        });
+
+        if (hasOverlap || isDuplicate) {
           // If it overlaps with another leave or is a duplicate uninformedLeave, mark for deletion
-          leavesToDelete.push(leave._id);
+          leavesToDelete.push(uninformedLeave._id);
         } else {
           // Otherwise, keep it as a valid uninformedLeave record
-          keptUninformedLeaves.push(leave);
+          keptUninformedLeaves.push(uninformedLeave);
         }
       });
     });

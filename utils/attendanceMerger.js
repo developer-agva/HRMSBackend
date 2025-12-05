@@ -151,6 +151,17 @@ async function removeDuplicateAttendanceLogs() {
 
 const moment = require('moment'); // Make sure moment is installed
 
+// Helper function to determine status based on duration
+const determineStatus = (duration) => {
+  if (duration >= 500) {
+    return "Present"; // Full day (8.33+ hours)
+  } else if (duration >= 240) {
+    return "Half Day"; // Half day (4+ hours)
+  } else {
+    return "Absent"; // Less than 4 hours
+  }
+};
+
 async function findCommonAttendanceAndUpdate() {
   try {
     // Step 1: Fetch OutDuty logs
@@ -255,7 +266,12 @@ async function findCommonAttendanceAndUpdate() {
   const earliestIn = inTimes.length ? inTimes[0].format('YYYY-MM-DD HH:mm:00') : '';
   const latestOut = outTimes.length ? outTimes[outTimes.length - 1].format('YYYY-MM-DD HH:mm:00') : '';
 
-  // Step 5: Update mainAttendanceLog
+  // Step 5: Update mainAttendanceLog with Status, Present, and Absent fields
+  const newStatus = determineStatus(effectiveMinutes);
+  const isPresent = effectiveMinutes >= 240 ? 1 : 0;
+  const isAbsent = effectiveMinutes < 240 ? 1 : 0;
+  const statusCode = effectiveMinutes >= 500 ? "P" : effectiveMinutes >= 240 ? "HD" : "A";
+
   await AttendanceLogModel.updateOne(
     {
       EmployeeCode: empId,
@@ -266,12 +282,16 @@ async function findCommonAttendanceAndUpdate() {
         Duration: effectiveMinutes,
         PunchRecords: sortedPunches.map(p => p.raw).join(',') + ',',
         InTime: earliestIn,
-        OutTime: latestOut
+        OutTime: latestOut,
+        Status: newStatus,
+        Present: isPresent,
+        Absent: isAbsent,
+        StatusCode: statusCode
       }
     }
   );
 
-  console.log(`✅ Updated ${empId} on ${outDate}: Duration = ${effectiveMinutes} mins, InTime = ${earliestIn}, OutTime = ${latestOut}`);
+  console.log(`✅ Updated ${empId} on ${outDate}: Duration = ${effectiveMinutes} mins, Status = ${newStatus}, InTime = ${earliestIn}, OutTime = ${latestOut}`);
 }
 
 
