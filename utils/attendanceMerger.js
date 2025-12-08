@@ -151,14 +151,66 @@ async function removeDuplicateAttendanceLogs() {
 
 const moment = require('moment'); // Make sure moment is installed
 
-// Helper function to determine status based on duration
-const determineStatus = (duration) => {
-  if (duration >= 500) {
-    return "Present"; // Full day (8.33+ hours)
-  } else if (duration >= 240) {
-    return "Half Day"; // Half day (4+ hours)
+// Helper function to check if employee has 10 to 6 shift
+const is10to6Shift = (startAt, endAt) => {
+  const startAtStr = String(startAt || '').trim().toLowerCase();
+  const endAtStr = String(endAt || '').trim().toLowerCase();
+  
+  // More flexible detection for 10 AM to 6 PM shift
+  // Check for various formats: "10:00", "10:00 AM", "10am", "10", etc.
+  // And "18:00", "6:00 PM", "6pm", "18", etc.
+  const startMatches = (
+    startAtStr === '10:00' || 
+    startAtStr === '10:00:00' ||
+    startAtStr === '10' ||
+    startAtStr.includes('10:00') ||
+    (startAtStr.includes('10') && (startAtStr.includes('am') || startAtStr.includes('a.m')))
+  );
+  
+  const endMatches = (
+    endAtStr === '18:00' || 
+    endAtStr === '18:00:00' ||
+    endAtStr === '6:00' ||
+    endAtStr === '6:00:00' ||
+    endAtStr === '18' ||
+    endAtStr === '6' ||
+    endAtStr.includes('18:00') ||
+    endAtStr.includes('6:00') ||
+    (endAtStr.includes('6') && (endAtStr.includes('pm') || endAtStr.includes('p.m'))) ||
+    (endAtStr.includes('18') && (endAtStr.includes('pm') || endAtStr.includes('p.m')))
+  );
+  
+  return startMatches && endMatches;
+};
+
+// Helper function to get shift thresholds for an employee
+const getShiftThresholds = async (employeeId) => {
+  try {
+    const employee = await employeeModel.findOne({ employeeId: String(employeeId) }, { shiftTime: 1 });
+    if (employee && employee.shiftTime && employee.shiftTime.startAt && employee.shiftTime.endAt) {
+      if (is10to6Shift(employee.shiftTime.startAt, employee.shiftTime.endAt)) {
+        // For 10 AM to 6 PM shift (8 hours = 480 minutes):
+        // Half day: 220 minutes (3.67 hours) - as per previous requirement
+        // Full day: 450 minutes (7.5 hours) - allows for small variations while requiring close to full shift
+        return { halfDay: 220, fullDay: 450 }; // 3.67 hours and 7.5 hours
+      }
+    }
+  } catch (error) {
+    console.warn(`Error fetching shift thresholds for employee ${employeeId}:`, error.message);
+  }
+  // Default thresholds for other shifts
+  return { halfDay: 240, fullDay: 500 }; // 4 hours and 8.33 hours
+};
+
+// Helper function to determine status based on duration and shift thresholds
+const determineStatus = (duration, thresholds = { halfDay: 240, fullDay: 500 }) => {
+  const { halfDay, fullDay } = thresholds;
+  if (duration >= fullDay) {
+    return "Present"; // Full day
+  } else if (duration >= halfDay) {
+    return "Half Day"; // Half day
   } else {
-    return "Absent"; // Less than 4 hours
+    return "Absent"; // Less than half day
   }
 };
 
@@ -182,6 +234,20 @@ async function findCommonAttendanceAndUpdate() {
     const uniqueEmployeeIds = [
       ...new Set(outDutyLogs.map(log => String(log.employeeId)))
     ];
+
+    // Step 2.5: Batch fetch all employee shift information upfront (optimization)
+    const employeesWithShift = await employeeModel.find(
+      { employeeId: { $in: uniqueEmployeeIds } },
+      { employeeId: 1, shiftTime: 1 }
+    ).lean();
+    
+    const employee10to6ShiftMap = new Map();
+    employeesWithShift.forEach(emp => {
+      if (emp.employeeId && emp.shiftTime && emp.shiftTime.startAt && emp.shiftTime.endAt) {
+        const has10to6Shift = is10to6Shift(emp.shiftTime.startAt, emp.shiftTime.endAt);
+        employee10to6ShiftMap.set(String(emp.employeeId), has10to6Shift);
+      }
+    });
 
     // Step 3: Fetch main attendance logs
     const mainAttendanceLog = await AttendanceLogModel.find(
@@ -260,29 +326,57 @@ async function findCommonAttendanceAndUpdate() {
   // Step 2: Sort punches chronologically
   const sortedPunches = uniquePunches.sort((a, b) => a.time - b.time);
 
-  // Step 3: Pair IN and OUT punches and calculate duration
+  // Step 3: Check if employee has 10 to 6 shift (using pre-fetched map)
+  const has10to6Shift = employee10to6ShiftMap.get(empId) === true;
+
+  // Step 4: Pair IN and OUT punches and calculate duration
   let effectiveMinutes = 0;
   const inTimes = [];
   const outTimes = [];
   let lastInTime = null;
 
-  for (const punch of sortedPunches) {
-    if (punch.type === 'in') {
-      // If there's already an unmatched IN, ignore the previous one
-      lastInTime = punch.time;
-    } else if (punch.type === 'out' && lastInTime) {
-      // Calculate duration between last IN and current OUT
-      const duration = punch.time.diff(lastInTime, 'minutes');
-      if (duration > 0) {
-        effectiveMinutes += duration;
-        inTimes.push(lastInTime);
-        outTimes.push(punch.time);
+  if (has10to6Shift) {
+    // For 10 to 6 shift employees: calculate based on first IN and last OUT only
+    let firstInTime = null;
+    let lastOutTime = null;
+
+    for (const punch of sortedPunches) {
+      if (punch.type === 'in') {
+        if (firstInTime === null || punch.time.isBefore(firstInTime)) {
+          firstInTime = punch.time;
+        }
+      } else if (punch.type === 'out') {
+        if (lastOutTime === null || punch.time.isAfter(lastOutTime)) {
+          lastOutTime = punch.time;
+        }
       }
-      lastInTime = null; // Reset for next pair
+    }
+
+    if (firstInTime && lastOutTime && lastOutTime.isAfter(firstInTime)) {
+      effectiveMinutes = lastOutTime.diff(firstInTime, 'minutes');
+      inTimes.push(firstInTime);
+      outTimes.push(lastOutTime);
+    }
+  } else {
+    // For other employees: sum all in/out pairs
+    for (const punch of sortedPunches) {
+      if (punch.type === 'in') {
+        // If there's already an unmatched IN, ignore the previous one
+        lastInTime = punch.time;
+      } else if (punch.type === 'out' && lastInTime) {
+        // Calculate duration between last IN and current OUT
+        const duration = punch.time.diff(lastInTime, 'minutes');
+        if (duration > 0) {
+          effectiveMinutes += duration;
+          inTimes.push(lastInTime);
+          outTimes.push(punch.time);
+        }
+        lastInTime = null; // Reset for next pair
+      }
     }
   }
 
-  // Step 4: Determine earliest IN and latest OUT
+  // Step 5: Determine earliest IN and latest OUT
   // If we couldn't calculate from punch records, use InTime/OutTime from out duty record
   let earliestIn = inTimes.length ? inTimes[0].format('YYYY-MM-DD HH:mm:00') : '';
   let latestOut = outTimes.length ? outTimes[outTimes.length - 1].format('YYYY-MM-DD HH:mm:00') : '';
@@ -323,11 +417,13 @@ async function findCommonAttendanceAndUpdate() {
     }
   }
 
-  // Step 5: Update mainAttendanceLog with Status, Present, and Absent fields
-  const newStatus = determineStatus(effectiveMinutes);
-  const isPresent = effectiveMinutes >= 240 ? 1 : 0;
-  const isAbsent = effectiveMinutes < 240 ? 1 : 0;
-  const statusCode = effectiveMinutes >= 500 ? "P" : effectiveMinutes >= 240 ? "HD" : "A";
+  // Step 6: Get shift thresholds for this employee and determine status
+  const thresholds = await getShiftThresholds(empId);
+  const { halfDay, fullDay } = thresholds;
+  const newStatus = determineStatus(effectiveMinutes, thresholds);
+  const isPresent = effectiveMinutes >= halfDay ? 1 : 0;
+  const isAbsent = effectiveMinutes < halfDay ? 1 : 0;
+  const statusCode = effectiveMinutes >= fullDay ? "P" : effectiveMinutes >= halfDay ? "HD" : "A";
 
   await AttendanceLogModel.updateOne(
     {

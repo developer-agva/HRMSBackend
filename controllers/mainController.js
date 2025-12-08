@@ -637,11 +637,47 @@ const generateUninformedLeave = async (req, res) => {
       });
     }
 
-    // Fetch all employees to create employee-manager map
-    const employeesData = await employeeModel.find({ accountStatus: "Active" }, { employeeId: 1, managerId: 1, workingDays: 1 });
+    // Helper function to check if employee has 10 to 6 shift
+    const is10to6Shift = (startAt, endAt) => {
+      const startAtStr = String(startAt || '').trim().toLowerCase();
+      const endAtStr = String(endAt || '').trim().toLowerCase();
+      
+      // More flexible detection for 10 AM to 6 PM shift
+      // Check for various formats: "10:00", "10:00 AM", "10am", "10", etc.
+      // And "18:00", "6:00 PM", "6pm", "18", etc.
+      const startMatches = (
+        startAtStr === '10:00' || 
+        startAtStr === '10:00:00' ||
+        startAtStr === '10' ||
+        startAtStr.includes('10:00') ||
+        (startAtStr.includes('10') && (startAtStr.includes('am') || startAtStr.includes('a.m')))
+      );
+      
+      const endMatches = (
+        endAtStr === '18:00' || 
+        endAtStr === '18:00:00' ||
+        endAtStr === '6:00' ||
+        endAtStr === '6:00:00' ||
+        endAtStr === '18' ||
+        endAtStr === '6' ||
+        endAtStr.includes('18:00') ||
+        endAtStr.includes('6:00') ||
+        (endAtStr.includes('6') && (endAtStr.includes('pm') || endAtStr.includes('p.m'))) ||
+        (endAtStr.includes('18') && (endAtStr.includes('pm') || endAtStr.includes('p.m')))
+      );
+      
+      return startMatches && endMatches;
+    };
 
-    // Create employee-manager map
+    // Fetch all employees to create employee-manager map, shift timing map, work_outside flag, and employment type
+    const employeesData = await employeeModel.find({ accountStatus: "Active" }, { employeeId: 1, managerId: 1, workingDays: 1, shiftTime: 1, work_outside: 1, employmentType: 1 });
+
+    // Create employee-manager map, shift timing map, work_outside flag map, 10to6 shift map, and employment type map
     const employeeManagerMap = new Map();
+    const employeeShiftMap = new Map();
+    const employeeWorkOutsideMap = new Map();
+    const employee10to6ShiftMap = new Map();
+    const employeeEmploymentTypeMap = new Map();
     employeesData.forEach(emp => {
       // Check for null employeeId before processing
       if (emp.employeeId) {
@@ -649,8 +685,70 @@ const generateUninformedLeave = async (req, res) => {
           managerId: emp.managerId,
           workingDays: emp.workingDays
         });
+        
+        // Store shift timing for threshold calculation
+        if (emp.shiftTime && emp.shiftTime.startAt && emp.shiftTime.endAt) {
+          employeeShiftMap.set(emp.employeeId.toString(), {
+            startAt: emp.shiftTime.startAt,
+            endAt: emp.shiftTime.endAt
+          });
+          
+          // Check if employee has 10 to 6 shift
+          const has10to6Shift = is10to6Shift(emp.shiftTime.startAt, emp.shiftTime.endAt);
+          employee10to6ShiftMap.set(emp.employeeId.toString(), has10to6Shift);
+        }
+        
+        // Store work_outside flag for duration calculation method
+        employeeWorkOutsideMap.set(emp.employeeId.toString(), emp.work_outside === true);
+        
+        // Store employment type to filter out contractual employees
+        employeeEmploymentTypeMap.set(emp.employeeId.toString(), emp.employmentType || "Permanent");
       }
     });
+    
+    // Helper function to get half-day and full-day thresholds based on shift timing
+    const getShiftThresholds = (employeeId) => {
+      const shift = employeeShiftMap.get(employeeId?.toString());
+      if (shift) {
+        const startAt = String(shift.startAt || '').trim().toLowerCase();
+        const endAt = String(shift.endAt || '').trim().toLowerCase();
+        
+        // More flexible detection for 10 AM to 6 PM shift
+        // Check for various formats: "10:00", "10:00 AM", "10am", "10", etc.
+        // And "18:00", "6:00 PM", "6pm", "18", "6:00", etc.
+        const startMatches = (
+          startAt === '10:00' || 
+          startAt === '10:00:00' ||
+          startAt === '10' ||
+          startAt.includes('10:00') ||
+          (startAt.includes('10') && (startAt.includes('am') || startAt.includes('a.m')))
+        );
+        
+        const endMatches = (
+          endAt === '18:00' || 
+          endAt === '18:00:00' ||
+          endAt === '6:00' ||
+          endAt === '6:00:00' ||
+          endAt === '18' ||
+          endAt === '6' ||
+          endAt.includes('18:00') ||
+          endAt.includes('6:00') ||
+          (endAt.includes('6') && (endAt.includes('pm') || endAt.includes('p.m'))) ||
+          (endAt.includes('18') && (endAt.includes('pm') || endAt.includes('p.m')))
+        );
+        
+        const is10to6Shift = startMatches && endMatches;
+        
+        if (is10to6Shift) {
+          // For 10 AM to 6 PM shift (8 hours = 480 minutes):
+          // Half day: 220 minutes (3.67 hours) - as per previous requirement
+          // Full day: 450 minutes (7.5 hours) - allows for small variations while requiring close to full shift
+          return { halfDay: 220, fullDay: 450 }; // 3.67 hours and 7.5 hours
+        }
+      }
+      // Default thresholds for other shifts
+      return { halfDay: 240, fullDay: 500 }; // 4 hours and 8.33 hours
+    };
 
     // Fetch ALL leave history (Pending and Approved) - including uninformedLeave
     // This ensures we don't create uninformed leave if ANY leave already exists for that day
@@ -697,21 +795,181 @@ const generateUninformedLeave = async (req, res) => {
         const outDutyKey = `${String(attendance.EmployeeCode || '')}_${dateKey}`;
         const outDutyRecord = outDutyMap.get(outDutyKey);
         
+        // Get shift thresholds for this employee
+        const thresholds = getShiftThresholds(attendance.EmployeeCode);
+        
         return {
           ...attendance.toObject(),
           managerId: employeeData.managerId || null,
           workingDays: employeeData.workingDays || null,
-          outDutyRecord: outDutyRecord || null // Attach out duty record if exists (for ALL employees)
+          outDutyRecord: outDutyRecord || null, // Attach out duty record if exists (for ALL employees)
+          shiftThresholds: thresholds // Attach shift thresholds for this employee
         };
       });
     // console.log(11, notMatchingLeaves) 
 
     // Filter based on working hours and manager availability
     // IMPORTANT: Only create uninformed leave for Absent records, NOT for Present records
+    // Also exclude contractual employees from uninformed leave generation
     const filteredLeaves = notMatchingLeaves.filter(attendance => {
       if (attendance.managerId === null) return false;
 
-      let duration = attendance.Duration || 0;
+      // Exclude contractual employees from uninformed leave generation
+      const employmentType = employeeEmploymentTypeMap.get(attendance.EmployeeCode?.toString()) || "Permanent";
+      if (employmentType && employmentType.trim().toLowerCase() === "contractual") {
+        return false; // Skip contractual employees - they should not get uninformed leaves
+      }
+
+      // Get shift-specific thresholds for this employee FIRST
+      const thresholds = attendance.shiftThresholds || { halfDay: 240, fullDay: 500 };
+      const halfDayThreshold = thresholds.halfDay;
+      const fullDayThreshold = thresholds.fullDay;
+      
+      // Start with stored Duration field
+      let duration = parseInt(attendance.Duration) || 0;
+      
+      // PRIORITY 0: Store status for later checks (we'll verify with duration after calculation)
+      const status = (attendance.Status || "").trim().toLowerCase();
+      
+      // IMPORTANT: Calculate duration from InTime/OutTime if available (more accurate than stored Duration)
+      // This ensures we use the actual worked hours, not potentially stale Duration field
+      if (attendance.InTime && attendance.OutTime) {
+        let inTimeStr = "";
+        let outTimeStr = "";
+        
+        if (attendance.InTime instanceof Date) {
+          inTimeStr = attendance.InTime.toISOString();
+        } else {
+          inTimeStr = String(attendance.InTime).trim();
+        }
+        
+        if (attendance.OutTime instanceof Date) {
+          outTimeStr = attendance.OutTime.toISOString();
+        } else {
+          outTimeStr = String(attendance.OutTime).trim();
+        }
+        
+        // Check if both InTime and OutTime are valid (not default/null/empty)
+        if (inTimeStr && 
+            outTimeStr && 
+            !inTimeStr.includes("1900-01-01") && 
+            !outTimeStr.includes("1900-01-01") &&
+            inTimeStr !== "" &&
+            outTimeStr !== "" &&
+            inTimeStr !== "null" &&
+            outTimeStr !== "null") {
+          try {
+            const inDate = new Date(inTimeStr);
+            const outDate = new Date(outTimeStr);
+            if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
+              const calculatedDuration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
+              // Use calculated duration (more accurate than stored Duration field)
+              duration = calculatedDuration;
+            }
+          } catch (e) {
+            // If date parsing fails, use original duration
+          }
+        }
+      }
+      
+      // PRIORITY 0.5: Calculate duration from PunchRecords if available (more accurate for multiple punch pairs)
+      // This handles cases where employee has multiple in/out punches throughout the day
+      // For work_outside employees and 10 to 6 shift employees, use first-in to last-out span
+      // For regular employees, sum all in/out pairs
+      if (attendance.PunchRecords && attendance.PunchRecords.trim() !== "") {
+        try {
+          const punchStr = attendance.PunchRecords.trim();
+          const punches = punchStr.split(',').filter(p => p.trim() !== '');
+          
+          // Check if employee is work_outside or has 10 to 6 shift
+          const isWorkOutside = employeeWorkOutsideMap.get(attendance.EmployeeCode?.toString()) || false;
+          const has10to6Shift = employee10to6ShiftMap.get(attendance.EmployeeCode?.toString()) || false;
+          
+          let totalPunchDuration = 0;
+          
+          if (isWorkOutside || has10to6Shift) {
+            // For work_outside employees and 10 to 6 shift employees: use first IN to last OUT span
+            let firstInTime = null;
+            let lastOutTime = null;
+            
+            for (const punch of punches) {
+              const trimmed = punch.trim();
+              if (!trimmed) continue;
+              
+              const timeMatch = trimmed.match(/^(\d{2}:\d{2})/);
+              const typeMatch = trimmed.match(/\b(in|out)\b/i);
+              
+              if (timeMatch && typeMatch) {
+                const timeStr = timeMatch[1];
+                const type = typeMatch[1].toLowerCase();
+                const [hours, minutes] = timeStr.split(':').map(Number);
+                const punchMinutes = hours * 60 + minutes;
+                
+                if (type === 'in') {
+                  if (firstInTime === null || punchMinutes < firstInTime) {
+                    firstInTime = punchMinutes;
+                  }
+                } else if (type === 'out') {
+                  if (lastOutTime === null || punchMinutes > lastOutTime) {
+                    lastOutTime = punchMinutes;
+                  }
+                }
+              }
+            }
+            
+            if (firstInTime !== null && lastOutTime !== null) {
+              let spanMinutes = lastOutTime - firstInTime;
+              // Handle case where out time is next day
+              if (spanMinutes < 0) {
+                spanMinutes += 24 * 60;
+              }
+              if (spanMinutes > 0) {
+                totalPunchDuration = spanMinutes;
+              }
+            }
+          } else {
+            // For regular employees: sum all in/out pairs
+            let lastInTime = null;
+            
+            for (const punch of punches) {
+              const trimmed = punch.trim();
+              if (!trimmed) continue;
+              
+              const timeMatch = trimmed.match(/^(\d{2}:\d{2})/);
+              const typeMatch = trimmed.match(/\b(in|out)\b/i);
+              
+              if (timeMatch && typeMatch) {
+                const timeStr = timeMatch[1];
+                const type = typeMatch[1].toLowerCase();
+                const [hours, minutes] = timeStr.split(':').map(Number);
+                const punchMinutes = hours * 60 + minutes;
+                
+                if (type === 'in') {
+                  lastInTime = punchMinutes;
+                } else if (type === 'out' && lastInTime !== null) {
+                  let durationMinutes = punchMinutes - lastInTime;
+                  // Handle case where out time is next day
+                  if (durationMinutes < 0) {
+                    durationMinutes += 24 * 60;
+                  }
+                  if (durationMinutes > 0) {
+                    totalPunchDuration += durationMinutes;
+                  }
+                  lastInTime = null; // Reset for next pair
+                }
+              }
+            }
+          }
+          
+          // If we calculated duration from punch records, use it (it's more accurate)
+          if (totalPunchDuration > 0) {
+            duration = totalPunchDuration;
+          }
+        } catch (e) {
+          // If punch record parsing fails, use existing duration
+          console.warn(`Error parsing punch records for employee ${attendance.EmployeeCode}:`, e.message);
+        }
+      }
       
       // PRIORITY 1: Check if employee has valid InTime and OutTime in main attendance log
       // If Duration is 0 or missing but InTime/OutTime exist, calculate duration from them
@@ -742,30 +1000,31 @@ const generateUninformedLeave = async (req, res) => {
             outTimeStr !== "" &&
             inTimeStr !== "null" &&
             outTimeStr !== "null") {
-          // If Duration is 0 or missing, calculate it from InTime/OutTime
-          if (duration === 0 || !duration) {
-            try {
-              const inDate = new Date(inTimeStr);
-              const outDate = new Date(outTimeStr);
-              if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
-                duration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
-              }
-            } catch (e) {
-              // If date parsing fails, duration remains 0
+          // Always calculate duration from InTime/OutTime if available (more accurate than stored Duration)
+          let calculatedDuration = duration;
+          try {
+            const inDate = new Date(inTimeStr);
+            const outDate = new Date(outTimeStr);
+            if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
+              calculatedDuration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
+              // Use calculated duration for all subsequent checks
+              duration = calculatedDuration;
             }
+          } catch (e) {
+            // If date parsing fails, use original duration
           }
           
           // Employee has valid check-in and check-out times - they were present
-          // If calculated duration >= 240 minutes, they worked at least half day
-          if (duration >= 240) {
-            return false; // Employee worked at least 4 hours, no uninformed leave needed
+          // Only skip uninformed leave if they worked full day (>= fullDayThreshold)
+          // If they worked half day, we should still create half day uninformed leave
+          if (duration >= fullDayThreshold) {
+            return false; // Employee worked full day, no uninformed leave needed
           }
           
-          // Even if duration is less than 240, if employee has valid InTime/OutTime, 
-          // they were physically present - don't create uninformed leave
-          // (They might have worked less than 4 hours but were still present)
+          // If duration is less than full day but has valid InTime/OutTime, 
+          // they were present but may need half day uninformed leave
+          // Continue processing to check if half day leave should be created
           hasValidMainAttendance = true;
-          return false; // Employee was present (has valid check-in/out), no uninformed leave needed
         }
       }
       
@@ -826,12 +1085,15 @@ const generateUninformedLeave = async (req, res) => {
           }
           
           // If out duty has valid data, employee was present
-          if (outDutyDuration >= 240) {
-            return false; // Employee worked at least 4 hours in out duty, no uninformed leave needed
+          // Only skip uninformed leave if they worked full day (>= fullDayThreshold)
+          // If they worked half day, we should still create half day uninformed leave
+          if (outDutyDuration >= fullDayThreshold) {
+            return false; // Employee worked full day in out duty, no uninformed leave needed
           }
           
-          // Even if duration is less than 240, if out duty has valid InTime/OutTime, employee was present
-          return false; // Employee was present (has valid out duty check-in/out), no uninformed leave needed
+          // If duration is less than full day but has valid InTime/OutTime, 
+          // they were present but may need half day uninformed leave
+          // Continue processing to check if half day leave should be created
         }
         
         // Check out duty PunchRecords
@@ -851,59 +1113,75 @@ const generateUninformedLeave = async (req, res) => {
         // Check out duty Duration directly (if available)
         if (outDuty.Duration) {
           const outDutyDurationValue = parseInt(outDuty.Duration) || 0;
-          if (outDutyDurationValue >= 240) {
-            return false; // Out duty shows employee worked at least 4 hours, no uninformed leave needed
+          // Only skip if they worked full day
+          if (outDutyDurationValue >= fullDayThreshold) {
+            return false; // Out duty shows employee worked full day, no uninformed leave needed
           }
         }
       }
       
-      // PRIORITY 2: Check Duration - if employee worked significant hours, they were present
-      // If Duration >= 240 minutes (4 hours), employee was at least half day present - no uninformed leave
-      if (duration >= 240) {
-        return false; // Employee worked at least 4 hours, no uninformed leave needed
-      }
-
-      // PRIORITY 3: Check Status field - if employee is Present/Full Day/Half Day, don't create uninformed leave
-      const status = (attendance.Status || "").trim().toLowerCase();
-      if (status === "present" || 
-          status === "full day" || 
-          status === "half day" || 
-          status.includes("present") || 
-          status.includes("full") || 
-          status.includes("half")) {
-        return false; // Employee was present, no uninformed leave needed
+      // PRIORITY 2: Check Duration FIRST - if duration >= fullDayThreshold, skip uninformed leave
+      // This is the most reliable check - if they worked full day, no uninformed leave needed
+      // Use the maximum of calculated duration and stored Duration to ensure we catch full-day attendance
+      const storedDuration = parseInt(attendance.Duration) || 0;
+      const effectiveDuration = Math.max(duration, storedDuration);
+      
+      if (effectiveDuration >= fullDayThreshold) {
+        return false; // Employee worked full day, no uninformed leave needed
       }
       
-      // PRIORITY 4: Check Present field - if Present = 1, employee was present
-      if (attendance.Present === 1) {
-        return false; // Employee was marked as present, no uninformed leave needed
-      }
-      
-      // PRIORITY 5: Check Absent field - if Absent = 0, employee was not absent
-      if (attendance.Absent === 0) {
-        return false; // Employee was not marked as absent, no uninformed leave needed
+      // PRIORITY 2.5: If status is "Present" or "Full Day", also check stored Duration field as fallback
+      // This handles cases where InTime/OutTime calculation might have failed
+      if ((status === "present" || status === "full day" || status.includes("present") || status.includes("full day")) && 
+          storedDuration >= fullDayThreshold) {
+        return false; // Status shows full day and stored Duration confirms it, no uninformed leave needed
       }
 
-      // PRIORITY 6: Check PunchRecords - if employee has punch records, they were likely present
+      // PRIORITY 3: Check Status field - if status is "Present" or "Full Day" and duration >= fullDayThreshold, skip
+      // This is a secondary check in case duration calculation had issues
+      if (status === "present" || status === "full day" || status.includes("present") || status.includes("full day")) {
+        // If status is "Present" or "Full Day", check duration - only skip if full day
+        if (duration >= fullDayThreshold) {
+          return false; // Employee was present full day, no uninformed leave needed
+        }
+        // If status says "present" or "full day" but duration < fullDayThreshold, continue to create leave
+        // (This handles edge cases where status might be incorrect)
+      }
+      // Note: If status is "half day" or "absent", continue to create uninformed leave
+      
+      // PRIORITY 4: Check Present field - only skip if duration >= fullDayThreshold
+      // If Present = 1 but duration < fullDayThreshold, may need half day uninformed leave
+      if (attendance.Present === 1 && duration >= fullDayThreshold) {
+        return false; // Employee was marked as present full day, no uninformed leave needed
+      }
+      
+      // PRIORITY 5: Check Absent field - only skip if duration >= fullDayThreshold
+      // If Absent = 0 but duration < fullDayThreshold, may need half day uninformed leave
+      if (attendance.Absent === 0 && duration >= fullDayThreshold) {
+        return false; // Employee was not marked as absent and worked full day, no uninformed leave needed
+      }
+
+      // PRIORITY 6: Check PunchRecords - if employee has punch records, check duration
+      // Only skip if they worked full day
       if (attendance.PunchRecords && attendance.PunchRecords.trim() !== "") {
         // Check if punch records contain valid in/out punches
         const punchStr = attendance.PunchRecords.toLowerCase();
         if (punchStr.includes("in(") && punchStr.includes("out(")) {
-          return false; // Employee has valid punch records, no uninformed leave needed
+          // Only skip if duration confirms full day
+          if (duration >= fullDayThreshold) {
+            return false; // Employee has valid punch records and worked full day, no uninformed leave needed
+          }
+          // If has punch records but duration < fullDayThreshold, continue to create leave
         }
       }
 
-      // Only create uninformed leave if:
-      // - Duration < 240 minutes (less than 4 hours)
-      // - No valid InTime/OutTime
-      // - Status indicates Absent
-      // - Present = 0 and Absent = 1
-      // - No valid punch records
-      if (duration < 240) {
-        return true; // Employee worked less than 4 hours and all other checks failed - likely absent
-      }
-
-      return false;
+      // Create uninformed leave if:
+      // - Duration < full day threshold (could be absent, half day, or less than full day)
+      // - All presence checks passed (no full day attendance confirmed)
+      // This will create:
+      //   - Full day uninformed leave if duration < halfDayThreshold
+      //   - Half day uninformed leave if duration >= halfDayThreshold but < fullDayThreshold
+      return true; // Employee did not work full day - create uninformed leave (full or half day based on duration)
     });
 
     // Fetch holiday list
@@ -956,10 +1234,27 @@ const generateUninformedLeave = async (req, res) => {
       }
       
       const attendanceDate = attendance.AttendanceDate.toISOString().split("T")[0];
+      
+      // Get shift-specific thresholds for this employee
+      const thresholds = attendance.shiftThresholds || { halfDay: 240, fullDay: 500 };
+      const halfDayThreshold = thresholds.halfDay;
+      const fullDayThreshold = thresholds.fullDay;
+      
+      // Determine late arrival threshold based on shift start time
+      let lateArrivalThreshold = "09:15:59"; // Default 9:15 AM
+      const shift = employeeShiftMap.get(attendance.EmployeeCode?.toString());
+      if (shift && shift.startAt) {
+        const startAt = String(shift.startAt).trim();
+        // If shift starts at 10 AM, late arrival is 10:15 AM
+        if (startAt.includes('10') && (startAt.includes('am') || startAt.includes('10:00'))) {
+          lateArrivalThreshold = "10:15:59";
+        }
+      }
+      
       const totalDays =
-        attendance.Duration < 240 ? "1" :
-          attendance.Duration >= 240 && attendance.Duration < 500 ? "0.5" :
-            attendance.InTime && attendance.InTime.split(" ")[1] > "09:15:59" ? "0.5" :
+        attendance.Duration < halfDayThreshold ? "1" :
+          attendance.Duration >= halfDayThreshold && attendance.Duration < fullDayThreshold ? "0.5" :
+            attendance.InTime && attendance.InTime.split(" ")[1] > lateArrivalThreshold ? "0.5" :
               "0";
 
       return {
@@ -1019,8 +1314,23 @@ const generateUninformedLeave = async (req, res) => {
 
     // Step 2: Identify uninformedLeave records to delete
     // Delete if they overlap with ANY other leave type (including other uninformedLeave)
+    // Also delete uninformed leaves for contractual employees
     uninformedLeaveMap.forEach((uninformedLeaves, employeeId) => {
       const allLeavesForEmployee = allLeavesMap.get(employeeId) || [];
+      
+      // Check if employee is contractual - if so, delete all their uninformed leaves
+      const employmentType = employeeEmploymentTypeMap.get(employeeId) || "Permanent";
+      const isContractual = employmentType && employmentType.trim().toLowerCase() === "contractual";
+      
+      if (isContractual) {
+        // Delete all uninformed leaves for contractual employees
+        uninformedLeaves.forEach(uninformedLeave => {
+          if (!leavesToDelete.includes(uninformedLeave._id)) {
+            leavesToDelete.push(uninformedLeave._id);
+          }
+        });
+        return; // Skip further processing for contractual employees
+      }
 
       // Sort uninformedLeave records by date to handle duplicates
       uninformedLeaves.sort((a, b) => a.startDate - b.startDate);
@@ -1071,10 +1381,88 @@ const generateUninformedLeave = async (req, res) => {
       });
     });
 
-    // Step 3: Delete the identified uninformedLeave records
+    // Step 3: Also check and delete uninformed leaves for employees who worked full day
+    // Fetch all attendance records in the date range to check for full-day attendance
+    const attendanceForCleanup = await AttendanceLogModel.find(filter, {
+      EmployeeCode: 1,
+      AttendanceDate: 1,
+      Duration: 1,
+      Status: 1,
+      InTime: 1,
+      OutTime: 1,
+      Present: 1,
+      Absent: 1
+    });
+    
+    // Create a set of employee-date combinations where employee worked full day
+    const fullDayAttendanceSet = new Set();
+    attendanceForCleanup.forEach(attendance => {
+      const employeeId = attendance.EmployeeCode?.toString();
+      if (!employeeId) return;
+      
+      const thresholds = getShiftThresholds(employeeId);
+      const fullDayThreshold = thresholds.fullDay;
+      
+      let duration = parseInt(attendance.Duration) || 0;
+      
+      // Calculate duration from InTime/OutTime if available
+      if (attendance.InTime && attendance.OutTime) {
+        try {
+          const inTimeStr = String(attendance.InTime).trim();
+          const outTimeStr = String(attendance.OutTime).trim();
+          
+          if (inTimeStr && outTimeStr && 
+              !inTimeStr.includes("1900-01-01") && !outTimeStr.includes("1900-01-01") &&
+              inTimeStr !== "" && outTimeStr !== "" && inTimeStr !== "null" && outTimeStr !== "null") {
+            const inDate = new Date(inTimeStr);
+            const outDate = new Date(outTimeStr);
+            if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
+              const calculatedDuration = Math.round((outDate - inDate) / (1000 * 60));
+              if (calculatedDuration > duration) {
+                duration = calculatedDuration;
+              }
+            }
+          }
+        } catch (e) {
+          // Use stored duration if calculation fails
+        }
+      }
+      
+      const status = (attendance.Status || "").trim().toLowerCase();
+      const isFullDay = (
+        duration >= fullDayThreshold ||
+        ((status === "present" || status === "full day" || status.includes("present") || status.includes("full day")) && 
+         duration >= fullDayThreshold) ||
+        (attendance.Present === 1 && duration >= fullDayThreshold)
+      );
+      
+      if (isFullDay) {
+        const attendanceDate = new Date(attendance.AttendanceDate);
+        const dateKey = attendanceDate.toISOString().split('T')[0];
+        fullDayAttendanceSet.add(`${employeeId}_${dateKey}`);
+      }
+    });
+    
+    // Delete uninformed leaves for employee-date combinations where they worked full day
+    uninformedLeaveMap.forEach((uninformedLeaves, employeeId) => {
+      uninformedLeaves.forEach(uninformedLeave => {
+        const leaveDate = new Date(uninformedLeave.startDate);
+        const dateKey = leaveDate.toISOString().split('T')[0];
+        const key = `${employeeId}_${dateKey}`;
+        
+        if (fullDayAttendanceSet.has(key)) {
+          // Employee worked full day on this date, delete the uninformed leave
+          if (!leavesToDelete.includes(uninformedLeave._id)) {
+            leavesToDelete.push(uninformedLeave._id);
+          }
+        }
+      });
+    });
+    
+    // Step 4: Delete the identified uninformedLeave records
     if (leavesToDelete.length > 0) {
       await leaveTakenHistoryModel.deleteMany({ _id: { $in: leavesToDelete } });
-      console.log(`Deleted ${leavesToDelete.length} uninformedLeave records.`);
+      console.log(`Deleted ${leavesToDelete.length} uninformedLeave records (including ${leavesToDelete.length - (leavesToDelete.length - fullDayAttendanceSet.size)} for full-day attendance).`);
     } else {
       console.log("No uninformedLeave records to delete.");
     }
@@ -3034,13 +3422,47 @@ const recalculateDuration = async (req, res) => {
       });
     }
 
-    // Determine work_outside flag for this employee (default false)
+    // Helper function to check if employee has 10 to 6 shift
+    const is10to6Shift = (startAt, endAt) => {
+      const startAtStr = String(startAt || '').trim().toLowerCase();
+      const endAtStr = String(endAt || '').trim().toLowerCase();
+      
+      const startMatches = (
+        startAtStr === '10:00' || 
+        startAtStr === '10:00:00' ||
+        startAtStr === '10' ||
+        startAtStr.includes('10:00') ||
+        (startAtStr.includes('10') && (startAtStr.includes('am') || startAtStr.includes('a.m')))
+      );
+      
+      const endMatches = (
+        endAtStr === '18:00' || 
+        endAtStr === '18:00:00' ||
+        endAtStr === '6:00' ||
+        endAtStr === '6:00:00' ||
+        endAtStr === '18' ||
+        endAtStr === '6' ||
+        endAtStr.includes('18:00') ||
+        endAtStr.includes('6:00') ||
+        (endAtStr.includes('6') && (endAtStr.includes('pm') || endAtStr.includes('p.m'))) ||
+        (endAtStr.includes('18') && (endAtStr.includes('pm') || endAtStr.includes('p.m')))
+      );
+      
+      return startMatches && endMatches;
+    };
+
+    // Determine work_outside flag and 10 to 6 shift for this employee
     let isWorkOutside = false;
+    let has10to6Shift = false;
     try {
-      const empDoc = await employeeModel.findOne({ employeeId: String(attendanceLog.employeeId) }, { work_outside: 1 });
+      const empDoc = await employeeModel.findOne({ employeeId: String(attendanceLog.employeeId) }, { work_outside: 1, shiftTime: 1 });
       isWorkOutside = !!(empDoc && empDoc.work_outside);
+      if (empDoc && empDoc.shiftTime && empDoc.shiftTime.startAt && empDoc.shiftTime.endAt) {
+        has10to6Shift = is10to6Shift(empDoc.shiftTime.startAt, empDoc.shiftTime.endAt);
+      }
     } catch (e) {
       isWorkOutside = false;
+      has10to6Shift = false;
     }
 
     // Parse punch records
@@ -3050,9 +3472,10 @@ const recalculateDuration = async (req, res) => {
       return { time: entry.slice(0, 5), type };
     });
 
-    // Calculate duration with work_outside rule
+    // Calculate duration with work_outside rule or 10 to 6 shift rule
     let totalDuration = 0;
-    if (isWorkOutside) {
+    if (isWorkOutside || has10to6Shift) {
+      // For work_outside employees and 10 to 6 shift employees: use first IN to last OUT span
       let firstIn = null;
       let lastOut = null;
       for (const punch of punches) {
@@ -3070,6 +3493,7 @@ const recalculateDuration = async (req, res) => {
         totalDuration = span > 0 ? span : 0;
       }
     } else {
+      // For regular employees: sum all in/out pairs
       let lastInTime = null;
       for (const punch of punches) {
         if (punch.type === "in") {
@@ -3420,6 +3844,173 @@ const getMergeResults = async (req, res) => {
   }
 };
 
+// Function to recalculate Status for all attendance records based on Duration and shift-specific thresholds
+const recalculateAttendanceStatus = async (req, res) => {
+  try {
+    console.log("🔄 Starting status recalculation for all attendance records...");
+    
+    // Fetch all employees with their shift times (including inactive to handle historical records)
+    const employeesData = await employeeModel.find(
+      {},
+      { employeeId: 1, shiftTime: 1, accountStatus: 1 }
+    );
+    
+    // Create shift map - use both employeeId and employeeCode as keys for lookup
+    const employeeShiftMap = new Map();
+    employeesData.forEach(emp => {
+      if (emp.employeeId && emp.shiftTime && emp.shiftTime.startAt && emp.shiftTime.endAt) {
+        const empIdStr = emp.employeeId.toString();
+        employeeShiftMap.set(empIdStr, {
+          startAt: emp.shiftTime.startAt,
+          endAt: emp.shiftTime.endAt
+        });
+        // Also map by employeeCode if it exists and is different
+        if (emp.employeeCode && emp.employeeCode.toString() !== empIdStr) {
+          employeeShiftMap.set(emp.employeeCode.toString(), {
+            startAt: emp.shiftTime.startAt,
+            endAt: emp.shiftTime.endAt
+          });
+        }
+      }
+    });
+    
+    // Helper function to get thresholds
+    const getShiftThresholds = (employeeId) => {
+      const shift = employeeShiftMap.get(employeeId?.toString());
+      if (shift) {
+        const startAt = String(shift.startAt || '').trim().toLowerCase();
+        const endAt = String(shift.endAt || '').trim().toLowerCase();
+        
+        // More flexible detection for 10 AM to 6 PM shift
+        // Check for various formats: "10:00", "10:00 AM", "10am", "10", etc.
+        // And "18:00", "6:00 PM", "6pm", "18", etc.
+        const startMatches = (
+          startAt === '10:00' || 
+          startAt === '10:00:00' ||
+          startAt === '10' ||
+          startAt.includes('10:00') ||
+          (startAt.includes('10') && (startAt.includes('am') || startAt.includes('a.m')))
+        );
+        
+        const endMatches = (
+          endAt === '18:00' || 
+          endAt === '18:00:00' ||
+          endAt === '6:00' ||
+          endAt === '6:00:00' ||
+          endAt === '18' ||
+          endAt === '6' ||
+          endAt.includes('18:00') ||
+          endAt.includes('6:00') ||
+          (endAt.includes('6') && (endAt.includes('pm') || endAt.includes('p.m'))) ||
+          (endAt.includes('18') && (endAt.includes('pm') || endAt.includes('p.m')))
+        );
+        
+        if (startMatches && endMatches) {
+          return { halfDay: 220, fullDay: 450 };
+        }
+      }
+      return { halfDay: 240, fullDay: 500 };
+    };
+    
+    // Helper function to determine status
+    const determineStatus = (duration, thresholds) => {
+      const { halfDay, fullDay } = thresholds;
+      if (duration >= fullDay) {
+        return "Present";
+      } else if (duration >= halfDay) {
+        return "Half Day";
+      } else {
+        return "Absent";
+      }
+    };
+    
+    // Fetch all attendance records with Duration > 0
+    const attendanceRecords = await AttendanceLogModel.find(
+      { Duration: { $gt: 0 } },
+      { EmployeeCode: 1, Duration: 1, Status: 1, Present: 1, Absent: 1, StatusCode: 1 }
+    );
+    
+    console.log(`📊 Found ${attendanceRecords.length} attendance records to process`);
+    
+    let updateCount = 0;
+    let skipCount = 0;
+    const bulkOps = [];
+    
+    for (const record of attendanceRecords) {
+      const employeeId = record.EmployeeCode?.toString();
+      if (!employeeId) {
+        skipCount++;
+        continue;
+      }
+      
+      const duration = parseInt(record.Duration) || 0;
+      if (duration <= 0) {
+        skipCount++;
+        continue;
+      }
+      
+      const thresholds = getShiftThresholds(employeeId);
+      const newStatus = determineStatus(duration, thresholds);
+      const { halfDay, fullDay } = thresholds;
+      
+      // Normalize status for comparison (trim whitespace)
+      const currentStatus = (record.Status || "").trim();
+      const normalizedNewStatus = (newStatus || "").trim();
+      
+      // Only update if status needs to change
+      if (currentStatus !== normalizedNewStatus) {
+        const isPresent = duration >= halfDay ? 1 : 0;
+        const isAbsent = duration < halfDay ? 1 : 0;
+        const statusCode = duration >= fullDay ? "P" : duration >= halfDay ? "HD" : "A";
+        
+        bulkOps.push({
+          updateOne: {
+            filter: { _id: record._id },
+            update: {
+              $set: {
+                Status: normalizedNewStatus,
+                Present: isPresent,
+                Absent: isAbsent,
+                StatusCode: statusCode
+              }
+            }
+          }
+        });
+        updateCount++;
+      } else {
+        skipCount++;
+      }
+    }
+    
+    // Execute bulk update
+    if (bulkOps.length > 0) {
+      await AttendanceLogModel.bulkWrite(bulkOps);
+      console.log(`✅ Updated ${updateCount} records with corrected status`);
+    }
+    
+    console.log(`📈 Summary: Updated ${updateCount}, Skipped ${skipCount}, Total ${attendanceRecords.length}`);
+    
+    res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Status recalculation completed successfully",
+      data: {
+        totalRecords: attendanceRecords.length,
+        updated: updateCount,
+        skipped: skipCount
+      }
+    });
+  } catch (error) {
+    console.error("❌ Error recalculating attendance status:", error);
+    res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to recalculate attendance status",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createAttendanceLogForOutDuty,
   punchOutForOutDuty,
@@ -3442,5 +4033,6 @@ module.exports = {
   recalculateDuration,
   triggerMergeAllExistingData,
   getMergeResults,
-  triggerAttendanceMerge
+  triggerAttendanceMerge,
+  recalculateAttendanceStatus
 };

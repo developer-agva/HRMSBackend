@@ -145,14 +145,45 @@ const calculateSpanFromPunchRecords = (punchRecords) => {
 };
 
 /**
+ * Helper function to check if employee has 10 to 6 shift
+ */
+const is10to6Shift = (startAt, endAt) => {
+  const startAtStr = String(startAt || '').trim().toLowerCase();
+  const endAtStr = String(endAt || '').trim().toLowerCase();
+  
+  const startMatches = (
+    startAtStr === '10:00' || 
+    startAtStr === '10:00:00' ||
+    startAtStr === '10' ||
+    startAtStr.includes('10:00') ||
+    (startAtStr.includes('10') && (startAtStr.includes('am') || startAtStr.includes('a.m')))
+  );
+  
+  const endMatches = (
+    endAtStr === '18:00' || 
+    endAtStr === '18:00:00' ||
+    endAtStr === '6:00' ||
+    endAtStr === '6:00:00' ||
+    endAtStr === '18' ||
+    endAtStr === '6' ||
+    endAtStr.includes('18:00') ||
+    endAtStr.includes('6:00') ||
+    (endAtStr.includes('6') && (endAtStr.includes('pm') || endAtStr.includes('p.m'))) ||
+    (endAtStr.includes('18') && (endAtStr.includes('pm') || endAtStr.includes('p.m')))
+  );
+  
+  return startMatches && endMatches;
+};
+
+/**
  * Enhanced duration calculation with better edge case handling
  */
-const calculateEnhancedDuration = (record, isWorkOutside) => {
+const calculateEnhancedDuration = (record, isWorkOutside, has10to6Shift = false) => {
   let duration = 0;
   let method = '';
   
-  // For work_outside employees: ONLY use first-in to last-out (span) when punch records exist
-  if (isWorkOutside) {
+  // For work_outside employees and 10 to 6 shift employees: ONLY use first-in to last-out (span) when punch records exist
+  if (isWorkOutside || has10to6Shift) {
     if (record.PunchRecords && record.PunchRecords.trim() !== '') {
       duration = calculateSpanFromPunchRecords(record.PunchRecords);
       if (duration > 0) {
@@ -212,6 +243,20 @@ const calculateOutDutyDurations = async () => {
       if (emp.employeeCode) workOutsideSet.add(String(emp.employeeCode));
     }
     
+    // Build a map of employees with 10 to 6 shift
+    const employeesWithShift = await EmployeeModel.find({ 
+      'shiftTime.startAt': { $exists: true },
+      'shiftTime.endAt': { $exists: true }
+    }).select('employeeId employeeCode shiftTime').lean();
+    const tenToSixShiftMap = new Map();
+    for (const emp of employeesWithShift) {
+      if (emp.shiftTime && emp.shiftTime.startAt && emp.shiftTime.endAt) {
+        const has10to6 = is10to6Shift(emp.shiftTime.startAt, emp.shiftTime.endAt);
+        if (emp.employeeId) tenToSixShiftMap.set(String(emp.employeeId), has10to6);
+        if (emp.employeeCode) tenToSixShiftMap.set(String(emp.employeeCode), has10to6);
+      }
+    }
+    
     // Find records with empty durations
     const recordsToUpdate = await AttendanceLogForOutDutyModel.find({
       $or: [
@@ -237,7 +282,8 @@ const calculateOutDutyDurations = async () => {
     for (const record of recordsToUpdate) {
       const empKey = record.employeeId ? String(record.employeeId) : '';
       const isWorkOutside = empKey && workOutsideSet.has(empKey);
-      const { duration, method } = calculateEnhancedDuration(record, isWorkOutside);
+      const has10to6Shift = empKey && tenToSixShiftMap.get(empKey) === true;
+      const { duration, method } = calculateEnhancedDuration(record, isWorkOutside, has10to6Shift);
       
       if (duration > 0) {
         bulkOps.push({
@@ -291,5 +337,6 @@ module.exports = {
   calculateOutDutyDurations,
   calculateDurationFromPunchRecords,
   calculateDurationFromTimes,
-  calculateEnhancedDuration
+  calculateEnhancedDuration,
+  is10to6Shift
 };

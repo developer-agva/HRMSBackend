@@ -21,7 +21,8 @@ const {
     recalculateDuration,
     triggerMergeAllExistingData,
     getMergeResults,
-    triggerAttendanceMerge
+    triggerAttendanceMerge,
+    recalculateAttendanceStatus
 } = require('../controllers/mainController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
@@ -74,6 +75,7 @@ router.get('/all-employee-salary-data', authMiddleware, getAllEmployeeSalaries);
 router.post('/merge-all-existing-data', triggerMergeAllExistingData);
 router.get('/merge-results', getMergeResults);
 router.post('/merge-attendance-from-out-duty', triggerAttendanceMerge);
+router.post('/recalculate-attendance-status', recalculateAttendanceStatus);
 
 // router.get('/punchTime',getPunchTimeDetails);  // temp-used
 
