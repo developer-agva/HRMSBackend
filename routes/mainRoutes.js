@@ -22,8 +22,10 @@ const {
     triggerMergeAllExistingData,
     getMergeResults,
     triggerAttendanceMerge,
-    recalculateAttendanceStatus
+    recalculateAttendanceStatus,
+    fixMissingCheckoutTime
 } = require('../controllers/mainController');
+const { getMusterRoll } = require('../controllers/musterRollController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
 const router = express.Router();
@@ -71,11 +73,15 @@ router.post('/recalculate-duration/:id', recalculateDuration);
 router.post('/save-salary-data', createEmployeeSalary);
 router.get('/all-employee-salary-data', authMiddleware, getAllEmployeeSalaries);
 
+// Muster Roll API
+router.get('/muster-roll', authMiddleware, getMusterRoll);
+
 // Merge operations routes
 router.post('/merge-all-existing-data', triggerMergeAllExistingData);
 router.get('/merge-results', getMergeResults);
 router.post('/merge-attendance-from-out-duty', triggerAttendanceMerge);
 router.post('/recalculate-attendance-status', recalculateAttendanceStatus);
+router.post('/fix-missing-checkout-time', fixMissingCheckoutTime);
 
 // router.get('/punchTime',getPunchTimeDetails);  // temp-used
 

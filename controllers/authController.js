@@ -1,6 +1,7 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const employeeModel = require("../models/employeeModel");
+const DeletedEmployee = require("../models/deletedEmployeeModel");
 const redisClient = require("../config/redisClient");
 // console.log(redisClient)
 const jwt = require("jsonwebtoken");
@@ -592,6 +593,8 @@ const getTodayOnleaveList = async (req, res) => {
 const deleteEmpById = async (req, res) => {
     try {
         const { employeeId } = req.params;
+        const { deletionReason } = req.body || {};
+        
         if (!employeeId) {
             return res.status(404).json({
                 statusCode: 404,
@@ -608,13 +611,41 @@ const deleteEmpById = async (req, res) => {
                 message: "Employee data not found.",
             });
         }
+
+        // Get the user who is deleting (from JWT token if available)
+        const deletedBy = req.employee?.employeeId || "System";
+
+        // Convert employee document to plain object and prepare for deleted collection
+        const employeeData = employee.toObject();
+        delete employeeData._id; // Remove the original _id
+        delete employeeData.__v; // Remove version key
+
+        // Add deletion metadata
+        const deletedEmployeeData = {
+            ...employeeData,
+            deletedAt: new Date(),
+            deletedBy: deletedBy,
+            deletionReason: deletionReason || "",
+            canRestore: true
+        };
+
+        // Save to deleted employees collection
+        const deletedEmployee = new DeletedEmployee(deletedEmployeeData);
+        await deletedEmployee.save();
+
+        // Now delete from main employees collection
         const deleteDoc = await employeeModel.findOneAndDelete({ employeeId: employeeId });
+        
         if (deleteDoc) {
             return res.status(200).json({
                 statusCode: 200,
                 statusValue: "SUCCESS",
-                message: "Employee deleted successfully.",
-                data: deleteDoc
+                message: "Employee deleted successfully and moved to deleted employees collection.",
+                data: {
+                    employeeId: deleteDoc.employeeId,
+                    employeeName: deleteDoc.employeeName,
+                    deletedAt: deletedEmployee.deletedAt
+                }
             });
         }
 
@@ -830,12 +861,109 @@ const updateEmpSalaryDetailsById = async (req, res) => {
       message: "Error updating employee",
       error: error.message,
     });
-  }
+    }
 };  
 
+// Restore deleted employee
+const restoreEmployee = async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+        
+        if (!employeeId) {
+            return res.status(400).json({
+                statusCode: 400,
+                statusValue: "FAIL",
+                message: "Employee ID is required.",
+            });
+        }
 
+        // Find the deleted employee
+        const deletedEmployee = await DeletedEmployee.findOne({ employeeId: employeeId });
+        
+        if (!deletedEmployee) {
+            return res.status(404).json({
+                statusCode: 404,
+                statusValue: "FAIL",
+                message: "Deleted employee not found.",
+            });
+        }
 
+        // Check if employee already exists in main collection
+        const existingEmployee = await employeeModel.findOne({ employeeId: employeeId });
+        if (existingEmployee) {
+            return res.status(400).json({
+                statusCode: 400,
+                statusValue: "FAIL",
+                message: "Employee with this ID already exists in the system.",
+            });
+        }
 
+        // Prepare employee data (remove deletion metadata)
+        const employeeData = deletedEmployee.toObject();
+        delete employeeData._id;
+        delete employeeData.__v;
+        delete employeeData.deletedAt;
+        delete employeeData.deletedBy;
+        delete employeeData.deletionReason;
+        delete employeeData.canRestore;
+        delete employeeData.createdAt;
+        delete employeeData.updatedAt;
+
+        // Create new employee in main collection
+        const restoredEmployee = new employeeModel(employeeData);
+        await restoredEmployee.save();
+
+        // Delete from deleted employees collection
+        await DeletedEmployee.findOneAndDelete({ employeeId: employeeId });
+
+        return res.status(200).json({
+            statusCode: 200,
+            statusValue: "SUCCESS",
+            message: "Employee restored successfully.",
+            data: {
+                employeeId: restoredEmployee.employeeId,
+                employeeName: restoredEmployee.employeeName,
+                restoredAt: new Date()
+            }
+        });
+
+    } catch (error) {
+        console.error("Error restoring employee:", error);
+        return res.status(500).json({
+            statusCode: 500,
+            statusValue: "FAIL",
+            message: "Error restoring employee",
+            error: error.message,
+        });
+    }
+};
+
+// Get all deleted employees
+const getDeletedEmployees = async (req, res) => {
+    try {
+        const deletedEmployees = await DeletedEmployee.find({})
+            .select('-loginPassword -employeeDevicePassword')
+            .sort({ deletedAt: -1 })
+            .lean();
+
+        return res.status(200).json({
+            statusCode: 200,
+            statusValue: "SUCCESS",
+            message: "Deleted employees retrieved successfully.",
+            data: deletedEmployees,
+            count: deletedEmployees.length
+        });
+
+    } catch (error) {
+        console.error("Error fetching deleted employees:", error);
+        return res.status(500).json({
+            statusCode: 500,
+            statusValue: "FAIL",
+            message: "Error fetching deleted employees",
+            error: error.message,
+        });
+    }
+};
 
 module.exports = {
     registerEmployee,
@@ -845,6 +973,8 @@ module.exports = {
     logout,
     getEmpDetailsById,
     deleteEmpById,
+    restoreEmployee,
+    getDeletedEmployees,
     getEmployeeListByManagerId,
     resetForgetPassword,
     verifyOtp,

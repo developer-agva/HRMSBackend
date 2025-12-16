@@ -33,8 +33,11 @@ router.get('/get-all', authLimiter, authController.getAllEmployeeList);
 router.get('/get-emp-list-by-manager', authMiddleware, authController.getEmployeeListByManagerId); 
 router.get('/get-employee-details/:employeeId', authMiddleware, authController.getEmpDetailsById);
 router.get('/get-employee-details-v2/:employeeId', authController.getEmpDetailsById);  // public api
-router.delete('/delete-employee/:employeeId', authController.deleteEmpById);
-router.delete('/delete-employee/:employeeId', authController.deleteEmpById);   
+router.delete('/delete-employee/:employeeId', authMiddleware, authController.deleteEmpById);
+
+// Deleted employees management
+router.post('/restore-employee/:employeeId', authMiddleware, authController.restoreEmployee);
+router.get('/get-deleted-employees', authMiddleware, authController.getDeletedEmployees);
 
 // get employee list on today
 router.get('/get-today-onleave-emp-list', authController.getTodayOnleaveList);  

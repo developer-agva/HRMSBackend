@@ -1,0 +1,1985 @@
+{
+	"info": {
+		"_postman_id": "hrms-api-collection-2024",
+		"name": "HRMS API Collection",
+		"description": "Complete API collection for HRMS Backend System",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:3001",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.token) {",
+									"        pm.collectionVariables.set('token', jsonData.token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"900\",\n    \"password\": \"HRMS*123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/login",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "login"]
+						}
+					}
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/logout",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "logout"]
+						}
+					}
+				},
+				{
+					"name": "Register Employee",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"employeeId\": \"123\",\n    \"employeeName\": \"John Doe\",\n    \"email\": \"john@example.com\",\n    \"password\": \"password123\",\n    \"designation\": \"Developer\",\n    \"employmentType\": \"Permanent\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/register",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "register"]
+						}
+					}
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/reset-password",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "reset-password"]
+						}
+					}
+				},
+				{
+					"name": "Verify OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"otp\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/verify-otp",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "verify-otp"]
+						}
+					}
+				},
+				{
+					"name": "Generate New Password",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\",\n    \"loginPassword\": \"newPassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/generate-newpassword",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "generate-newpassword"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Employee Management",
+			"item": [
+				{
+					"name": "Get All Employees",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/get-all",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "get-all"]
+						}
+					}
+				},
+				{
+					"name": "Get Employee Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/get-employee-details/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "get-employee-details", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Employee Details V2 (Public)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/get-employee-details-v2/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "get-employee-details-v2", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Employee",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"employeeName\": \"Updated Name\",\n    \"designation\": \"Senior Developer\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/update/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "update", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Employee Salary Details",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"salary_details\": {\n        \"basic_salary\": \"50000\",\n        \"hra\": \"20000\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/update-emp-salary-details/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "update-emp-salary-details", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Employee",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/delete-employee/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "delete-employee", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Employee List by Manager",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/get-emp-list-by-manager",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "get-emp-list-by-manager"]
+						}
+					}
+				},
+				{
+					"name": "Get Today On Leave Employee List",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/employee/get-today-onleave-emp-list",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "employee", "get-today-onleave-emp-list"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Attendance",
+			"item": [
+				{
+					"name": "Get All Attendance Logs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/attendance-logs?page=1&limit=10&dateFrom=2024-01-01&dateTo=2024-12-31",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "attendance-logs"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "dateFrom",
+									"value": "2024-01-01"
+								},
+								{
+									"key": "dateTo",
+									"value": "2024-12-31"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Attendance Logs by Employee ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/attendance-logs/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "attendance-logs", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Attendance Days by Month",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/attendance-days-by-month/:employeeId?yearMonth=2024-11",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "attendance-days-by-month", ":employeeId"],
+							"query": [
+								{
+									"key": "yearMonth",
+									"value": "2024-11"
+								}
+							],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Today's Attendance Logs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/attendance-logs-day-wise",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "attendance-logs-day-wise"]
+						}
+					}
+				},
+				{
+					"name": "Punch In (Out Duty)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"employeeId\": \"900\",\n    \"location\": {\n        \"latitude\": 28.6139,\n        \"longitude\": 77.2090\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/punch-in",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "punch-in"]
+						}
+					}
+				},
+				{
+					"name": "Punch Out (Out Duty)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/punch-out/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "punch-out", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "attendance_log_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Out Duty Log Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/get-log-records/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "get-log-records", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get All Punch Records (Out Duty)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/get-all-punch-records/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "get-all-punch-records", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get All Out Duty Records",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/get-all-out-duty-records",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "get-all-out-duty-records"]
+						}
+					}
+				},
+				{
+					"name": "Save Employee Location",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"employeeId\": \"900\",\n    \"latitude\": 28.6139,\n    \"longitude\": 77.2090\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/save-emp-location",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "save-emp-location"]
+						}
+					}
+				},
+				{
+					"name": "Update Location",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"latitude\": 28.6139,\n    \"longitude\": 77.2090\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/update-location/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "update-location", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "attendance_log_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Recalculate Duration",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/recalculate-duration/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "recalculate-duration", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "attendance_log_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Remove Duplicate Attendance Logs",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/remove-duplicate-attendance-logs-by-month",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "remove-duplicate-attendance-logs-by-month"]
+						}
+					}
+				},
+				{
+					"name": "Generate Uninformed Leave",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/generate-uninformed-leave",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "generate-uninformed-leave"]
+						}
+					}
+				},
+				{
+					"name": "Approve Pending Leaves by System",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/approve-pending-leaves-by-system",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "approve-pending-leaves-by-system"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Muster Roll",
+			"item": [
+				{
+					"name": "Get Muster Roll",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/muster-roll?year=2024&month=11&type=all",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "muster-roll"],
+							"query": [
+								{
+									"key": "year",
+									"value": "2024",
+									"description": "Year (required)"
+								},
+								{
+									"key": "month",
+									"value": "11",
+									"description": "Month 1-12 (required)"
+								},
+								{
+									"key": "type",
+									"value": "all",
+									"description": "permanent | contractual | all (optional)"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Leave Management",
+			"item": [
+				{
+					"name": "Apply Leave",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"leaveType\": \"casualLeave\",\n    \"leaveStartDate\": \"2024-12-01\",\n    \"leaveEndDate\": \"2024-12-03\",\n    \"totalDays\": \"3\",\n    \"reason\": \"Personal work\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/apply-leave/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "apply-leave", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Employee Leaves",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/get-employee-leave/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "get-employee-leave", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get All Leaves",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/get-all-leaves",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "get-all-leaves"]
+						}
+					}
+				},
+				{
+					"name": "Get All Pending Leaves",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/get-all-pending-leaves",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "get-all-pending-leaves"]
+						}
+					}
+				},
+				{
+					"name": "Get All JSON Leaves",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/get-all-json-leaves",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "get-all-json-leaves"]
+						}
+					}
+				},
+				{
+					"name": "Action for Leave Application",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"Approved\",\n    \"remarks\": \"Approved by HR\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/action-for-leave-application/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "action-for-leave-application", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "leave_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Leave Application",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/delete-leave-application/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "delete-leave-application", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "leave_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Apply for Regularization",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"date\": \"2024-12-01\",\n    \"reason\": \"Forgot to punch in\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/apply-for-regularization/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "apply-for-regularization", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Action for Regularization",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"Approved\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/action-for-regularization/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "action-for-regularization", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "regularization_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Request Comp Off",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"compOffDate\": \"2024-12-01\",\n    \"reason\": \"Worked on holiday\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/generate-compoff/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "generate-compoff", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get All Pending Comp Off",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/get-all-pending-compoff",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "get-all-pending-compoff"]
+						}
+					}
+				},
+				{
+					"name": "Get Own Comp Off History",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/get-own-compoff-history",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "get-own-compoff-history"]
+						}
+					}
+				},
+				{
+					"name": "Action for Comp Off Request",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"Approved\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/action-for-compoff-request/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "action-for-compoff-request", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "compoff_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Comp Off",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/delete-compOff/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "delete-compOff", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "compoff_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Revert Leave Request",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"leaveId\": \"leave_id\",\n    \"revertedDays\": \"2\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/revert-leave-req",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "revert-leave-req"]
+						}
+					}
+				},
+				{
+					"name": "Action for Revert Leave Request",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"Approved\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/action-for-revert-leave-req/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "action-for-revert-leave-req", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "revert_leave_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Apply for Vendor Meeting",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"leaveStartDate\": \"2024-12-01\",\n    \"leaveEndDate\": \"2024-12-01\",\n    \"reason\": \"Vendor meeting\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/apply-for-vendor-meeting/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "apply-for-vendor-meeting", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Action for Vendor Meeting",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"Approved\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/action-for-vendor-meeting/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "action-for-vendor-meeting", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "vendor_meeting_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get All Vendor Meeting Logs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/get-all-vendor-meeting-logs",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "get-all-vendor-meeting-logs"]
+						}
+					}
+				},
+				{
+					"name": "Get Vendor Meeting by User ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/leave/get-all-vendor-meeting-logs/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "leave", "get-all-vendor-meeting-logs", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Payroll & Salary",
+			"item": [
+				{
+					"name": "Create Employee Salary",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"pay_slip_month\": \"2024-11\",\n    \"employee_basic_details\": {\n        \"employee_code\": \"900\",\n        \"employee_name\": \"John Doe\",\n        \"designation\": \"Developer\"\n    },\n    \"salary_details\": {\n        \"basic_salary\": \"50000\",\n        \"hra\": \"20000\",\n        \"total_gross_salary\": \"70000\",\n        \"employee_pf\": \"1800\",\n        \"employee_esi\": \"500\",\n        \"tds\": \"0\",\n        \"net_pay\": \"67700\"\n    },\n    \"leave_summary\": {\n        \"month_days\": \"30\",\n        \"payable_days\": \"28\",\n        \"workedDays\": \"25\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/save-salary-data",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "save-salary-data"]
+						}
+					}
+				},
+				{
+					"name": "Get All Employee Salaries",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/all-employee-salary-data?page=1&limit=10&search=",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "all-employee-salary-data"],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "search",
+									"value": ""
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Common APIs",
+			"item": [
+				{
+					"name": "Add Holiday",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"holidayName\": \"Diwali\",\n    \"holidayDate\": \"2024-11-01\",\n    \"description\": \"Festival holiday\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/common/add-holiday",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "add-holiday"]
+						}
+					}
+				},
+				{
+					"name": "Get Holiday List",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/get-holiday-list",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "get-holiday-list"]
+						}
+					}
+				},
+				{
+					"name": "Update Holiday",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"holidayName\": \"Updated Holiday\",\n    \"holidayDate\": \"2024-11-01\",\n    \"description\": \"Updated description\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/common/update-holiday/:holiday_id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "update-holiday", ":holiday_id"],
+							"variable": [
+								{
+									"key": "holiday_id",
+									"value": "holiday_id_here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Holiday",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/delete-holiday/:holiday_id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "delete-holiday", ":holiday_id"],
+							"variable": [
+								{
+									"key": "holiday_id",
+									"value": "holiday_id_here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Add Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"eventName\": \"Company Party\",\n    \"eventDate\": \"2024-12-25\",\n    \"description\": \"Annual company party\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/common/add-event",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "add-event"]
+						}
+					}
+				},
+				{
+					"name": "Get Event List",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/get-event-list",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "get-event-list"]
+						}
+					}
+				},
+				{
+					"name": "Update Event",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"eventName\": \"Updated Event\",\n    \"eventDate\": \"2024-12-25\",\n    \"description\": \"Updated description\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/common/update-event/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "update-event", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "event_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Event",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/delete-event/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "delete-event", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "event_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Employee Data Count",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/get-emp-data-count",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "get-emp-data-count"]
+						}
+					}
+				},
+				{
+					"name": "Get Employee Attendance Count",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/get-emp-attendance-count",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "get-emp-attendance-count"]
+						}
+					}
+				},
+				{
+					"name": "Get Employee Leaves Count",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/get-emp-leaves-count",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "get-emp-leaves-count"]
+						}
+					}
+				},
+				{
+					"name": "Add Trackolap Attendance",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"employeeId\": \"900\",\n    \"employeeName\": \"John Doe\",\n    \"date\": \"2024-11-15\",\n    \"status\": \"P\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/common/add-trackolap-attendance",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "add-trackolap-attendance"]
+						}
+					}
+				},
+				{
+					"name": "Get Trackolap Attendance",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/get-trackolap-attendance",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "get-trackolap-attendance"]
+						}
+					}
+				},
+				{
+					"name": "Add Tax Declaration",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"employeeId\": \"900\",\n    \"section80C\": \"150000\",\n    \"section80D\": \"25000\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/common/add-declaration",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "add-declaration"]
+						}
+					}
+				},
+				{
+					"name": "Get All Tax Declarations",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/tax-declarations",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "tax-declarations"]
+						}
+					}
+				},
+				{
+					"name": "Save Log Data",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"User Login\",\n    \"details\": \"User logged in successfully\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/common/save-log-data",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "save-log-data"]
+						}
+					}
+				},
+				{
+					"name": "Get All Logs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/get-logs-data",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "get-logs-data"]
+						}
+					}
+				},
+				{
+					"name": "Get All Private Documents",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/common/get-all-private-documents",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "common", "get-all-private-documents"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Tasks & Projects",
+			"item": [
+				{
+					"name": "Add Project",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"New Project\",\n    \"user_ids\": [191],\n    \"assignes_emails\": [\"user@example.com\"],\n    \"date_start\": \"2024-12-01T00:00:00.000Z\",\n    \"date_end\": \"2024-12-31T00:00:00.000Z\",\n    \"tasks_count\": 5,\n    \"description\": \"Project description\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/task/add-project",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "add-project"]
+						}
+					}
+				},
+				{
+					"name": "Update Project",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Updated Project\",\n    \"description\": \"Updated description\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/task/update-project/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "update-project", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "project_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Projects",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/task/get-projects",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "get-projects"]
+						}
+					}
+				},
+				{
+					"name": "Get All Projects",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/task/get-all-project",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "get-all-project"]
+						}
+					}
+				},
+				{
+					"name": "Add Task",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"project_id\": \"project_id_here\",\n    \"name\": \"New Task\",\n    \"description\": \"Task description\",\n    \"assignee_email\": \"user@example.com\",\n    \"due_date\": \"2024-12-31\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/task/add-task",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "add-task"]
+						}
+					}
+				},
+				{
+					"name": "Update Task",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Updated Task\",\n    \"description\": \"Updated description\",\n    \"status\": \"In Progress\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/task/update-task/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "update-task", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "task_id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Tasks",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/task/get-tasks",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "get-tasks"]
+						}
+					}
+				},
+				{
+					"name": "Get Tasks V2",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/task/get-tasks-v2",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "get-tasks-v2"]
+						}
+					}
+				},
+				{
+					"name": "Get Tasks by Project ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/task/get-tasks/:project_id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "get-tasks", ":project_id"],
+							"variable": [
+								{
+									"key": "project_id",
+									"value": "project_id_here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Task Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/task/get-task-details/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "task", "get-task-details", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "task_id"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Punch Records",
+			"item": [
+				{
+					"name": "Get Punch Records",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/punch-records",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "punch-records"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "File Uploads",
+			"item": [
+				{
+					"name": "Upload Medical Report",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/s3/upload-medical-report/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "s3", "upload-medical-report", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Upload Selfie for Attendance",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/s3/upload-selfie-for-attendance",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "s3", "upload-selfie-for-attendance"]
+						}
+					}
+				},
+				{
+					"name": "Upload Profile Image",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/s3/upload-profile-image/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "s3", "upload-profile-image", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Upload Employee Document",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/s3/upload-doc",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "s3", "upload-doc"]
+						}
+					}
+				},
+				{
+					"name": "Upload Employee File",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"employeeId\": \"900\",\n    \"documentType\": \"Resume\",\n    \"fileUrl\": \"https://example.com/file.pdf\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/s3/upload-employee-document",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "s3", "upload-employee-document"]
+						}
+					}
+				},
+				{
+					"name": "Get Employee Document List",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/s3/get-employee-document-list",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "s3", "get-employee-document-list"]
+						}
+					}
+				},
+				{
+					"name": "Get Employee Document List by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/s3/get-employee-document-list/:employeeId",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "s3", "get-employee-document-list", ":employeeId"],
+							"variable": [
+								{
+									"key": "employeeId",
+									"value": "900"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Employee Document",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/s3/delete-employee-document-list/:id",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "s3", "delete-employee-document-list", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "document_id"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Merge Operations",
+			"item": [
+				{
+					"name": "Merge All Existing Data",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/merge-all-existing-data",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "merge-all-existing-data"]
+						}
+					}
+				},
+				{
+					"name": "Get Merge Results",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/merge-results",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "merge-results"]
+						}
+					}
+				},
+				{
+					"name": "Merge Attendance from Out Duty",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/merge-attendance-from-out-duty",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "merge-attendance-from-out-duty"]
+						}
+					}
+				},
+				{
+					"name": "Recalculate Attendance Status",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/recalculate-attendance-status",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "recalculate-attendance-status"]
+						}
+					}
+				},
+				{
+					"name": "Fix Missing Checkout Time",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/fix-missing-checkout-time",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "fix-missing-checkout-time"]
+						}
+					}
+				}
+			]
+		}
+	]
+}

@@ -591,6 +591,7 @@ const generateUninformedLeave = async (req, res) => {
         $lte: dateTo
       };
     }
+
     const outDutyRecords = await attendanceLogModelForOutDuty.find(outDutyFilter, {
       employeeId: 1,
       AttendanceDate: 1,
@@ -668,7 +669,7 @@ const generateUninformedLeave = async (req, res) => {
       
       return startMatches && endMatches;
     };
-
+    
     // Fetch all employees to create employee-manager map, shift timing map, work_outside flag, and employment type
     const employeesData = await employeeModel.find({ accountStatus: "Active" }, { employeeId: 1, managerId: 1, workingDays: 1, shiftTime: 1, work_outside: 1, employmentType: 1 });
 
@@ -849,25 +850,43 @@ const generateUninformedLeave = async (req, res) => {
           outTimeStr = String(attendance.OutTime).trim();
         }
         
-        // Check if both InTime and OutTime are valid (not default/null/empty)
+        // Check if InTime is valid
         if (inTimeStr && 
-            outTimeStr && 
-            !inTimeStr.includes("1900-01-01") && 
-            !outTimeStr.includes("1900-01-01") &&
+            !inTimeStr.includes("1900-01-01") &&
             inTimeStr !== "" &&
-            outTimeStr !== "" &&
-            inTimeStr !== "null" &&
-            outTimeStr !== "null") {
-          try {
-            const inDate = new Date(inTimeStr);
-            const outDate = new Date(outTimeStr);
-            if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
-              const calculatedDuration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
-              // Use calculated duration (more accurate than stored Duration field)
-              duration = calculatedDuration;
+            inTimeStr !== "null") {
+          // If OutTime is missing or invalid, set default punch out time to 18:30 PM
+          if (!outTimeStr || 
+              outTimeStr.includes("1900-01-01") ||
+              outTimeStr === "" ||
+              outTimeStr === "null") {
+            try {
+              const inDate = new Date(inTimeStr);
+              if (!isNaN(inDate.getTime())) {
+                // Set default out time to 18:30 PM on the same date
+                const outDate = new Date(inDate);
+                outDate.setHours(18, 30, 0, 0);
+                const calculatedDuration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
+                if (calculatedDuration > 0) {
+                  duration = calculatedDuration;
+                }
+              }
+            } catch (e) {
+              // If date parsing fails, use original duration
             }
-          } catch (e) {
-            // If date parsing fails, use original duration
+          } else {
+            // Both InTime and OutTime are valid
+            try {
+              const inDate = new Date(inTimeStr);
+              const outDate = new Date(outTimeStr);
+              if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
+                const calculatedDuration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
+                // Use calculated duration (more accurate than stored Duration field)
+                duration = calculatedDuration;
+              }
+            } catch (e) {
+              // If date parsing fails, use original duration
+            }
           }
         }
       }
@@ -917,6 +936,11 @@ const generateUninformedLeave = async (req, res) => {
               }
             }
             
+            // If there's a first IN but no OUT, set default punch out time to 18:30 PM
+            if (firstInTime !== null && lastOutTime === null) {
+              lastOutTime = 18 * 60 + 30; // 18:30 in minutes
+            }
+            
             if (firstInTime !== null && lastOutTime !== null) {
               let spanMinutes = lastOutTime - firstInTime;
               // Handle case where out time is next day
@@ -959,6 +983,19 @@ const generateUninformedLeave = async (req, res) => {
                 }
               }
             }
+            
+            // If there's an unmatched IN punch (no OUT), set default punch out time to 18:30 PM
+            if (lastInTime !== null) {
+              const defaultOutTime = 18 * 60 + 30; // 18:30 in minutes
+              let durationMinutes = defaultOutTime - lastInTime;
+              // Handle case where out time is next day
+              if (durationMinutes < 0) {
+                durationMinutes += 24 * 60;
+              }
+              if (durationMinutes > 0) {
+                totalPunchDuration += durationMinutes;
+              }
+            }
           }
           
           // If we calculated duration from punch records, use it (it's more accurate)
@@ -991,27 +1028,45 @@ const generateUninformedLeave = async (req, res) => {
           outTimeStr = String(attendance.OutTime).trim();
         }
         
-        // Check if both InTime and OutTime are valid (not default/null/empty)
+        // Check if InTime is valid
         if (inTimeStr && 
-            outTimeStr && 
-            !inTimeStr.includes("1900-01-01") && 
-            !outTimeStr.includes("1900-01-01") &&
+            !inTimeStr.includes("1900-01-01") &&
             inTimeStr !== "" &&
-            outTimeStr !== "" &&
-            inTimeStr !== "null" &&
-            outTimeStr !== "null") {
-          // Always calculate duration from InTime/OutTime if available (more accurate than stored Duration)
-          let calculatedDuration = duration;
-          try {
-            const inDate = new Date(inTimeStr);
-            const outDate = new Date(outTimeStr);
-            if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
-              calculatedDuration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
-              // Use calculated duration for all subsequent checks
-              duration = calculatedDuration;
+            inTimeStr !== "null") {
+          // If OutTime is missing or invalid, set default punch out time to 18:30 PM
+          if (!outTimeStr || 
+              outTimeStr.includes("1900-01-01") ||
+              outTimeStr === "" ||
+              outTimeStr === "null") {
+            try {
+              const inDate = new Date(inTimeStr);
+              if (!isNaN(inDate.getTime())) {
+                // Set default out time to 18:30 PM on the same date
+                const outDate = new Date(inDate);
+                outDate.setHours(18, 30, 0, 0);
+                const calculatedDuration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
+                if (calculatedDuration > 0) {
+                  duration = calculatedDuration;
+                }
+              }
+            } catch (e) {
+              // If date parsing fails, use original duration
             }
-          } catch (e) {
-            // If date parsing fails, use original duration
+          } else {
+            // Both InTime and OutTime are valid
+            // Always calculate duration from InTime/OutTime if available (more accurate than stored Duration)
+            let calculatedDuration = duration;
+            try {
+              const inDate = new Date(inTimeStr);
+              const outDate = new Date(outTimeStr);
+              if (!isNaN(inDate.getTime()) && !isNaN(outDate.getTime()) && outDate > inDate) {
+                calculatedDuration = Math.round((outDate - inDate) / (1000 * 60)); // Convert to minutes
+                // Use calculated duration for all subsequent checks
+                duration = calculatedDuration;
+              }
+            } catch (e) {
+              // If date parsing fails, use original duration
+            }
           }
           
           // Employee has valid check-in and check-out times - they were present
@@ -2300,26 +2355,74 @@ const getAttendanceDaysByMonth = async (req, res) => {
       return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
     };
 
-    const getAttendanceStatus = (durationInMinutes, inTimeStr) => {
+    // Helper function to check if employee has 10 to 6 shift
+    const is10to6Shift = (startAt, endAt) => {
+      if (!startAt || !endAt) return false;
+      const startAtStr = String(startAt || '').trim().toLowerCase();
+      const endAtStr = String(endAt || '').trim().toLowerCase();
+      
+      const startMatches = (
+        startAtStr === '10:00' || 
+        startAtStr === '10:00:00' ||
+        startAtStr === '10' ||
+        startAtStr.includes('10:00') ||
+        (startAtStr.includes('10') && (startAtStr.includes('am') || startAtStr.includes('a.m')))
+      );
+      
+      const endMatches = (
+        endAtStr === '18:00' || 
+        endAtStr === '18:00:00' ||
+        endAtStr === '6:00' ||
+        endAtStr === '6:00:00' ||
+        endAtStr === '18' ||
+        endAtStr === '6' ||
+        endAtStr.includes('18:00') ||
+        endAtStr.includes('6:00') ||
+        (endAtStr.includes('6') && (endAtStr.includes('pm') || endAtStr.includes('p.m'))) ||
+        (endAtStr.includes('18') && (endAtStr.includes('pm') || endAtStr.includes('p.m')))
+      );
+      
+      return startMatches && endMatches;
+    };
+
+    const getAttendanceStatus = (entry) => {
+      // Priority 1: Use Status from database (already calculated correctly by merge API)
+      if (entry.Status && entry.Status.trim() !== '') {
+        return entry.Status.trim();
+      }
+
+      // Priority 2: Recalculate only if Status is missing, using shift-specific thresholds
+      const durationInMinutes = parseInt(entry.Duration) || 0;
       const hours = Math.floor(durationInMinutes / 60);
       const minutes = durationInMinutes % 60;
       const totalMinutes = hours * 60 + minutes;
 
+      // Get shift-specific thresholds
+      let halfDayThreshold = 240; // 4 hours
+      let fullDayThreshold = 500; // 8.33 hours
+      
+      if (entry.shiftTime && entry.shiftTime.startAt && entry.shiftTime.endAt) {
+        if (is10to6Shift(entry.shiftTime.startAt, entry.shiftTime.endAt)) {
+          halfDayThreshold = 220; // 3.67 hours for 10-6 shift
+          fullDayThreshold = 450; // 7.5 hours for 10-6 shift
+        }
+      }
+
+      // Check for late arrival (only if not already marked as Present/Full Day)
       const timeThreshold = "09:16:00";
       let isLate = false;
 
-      if (inTimeStr && inTimeStr.includes(" ")) {
-        const timePart = inTimeStr.split(" ")[1]; // e.g., "09:45:00"
+      if (entry.InTime && entry.InTime.includes(" ")) {
+        const timePart = entry.InTime.split(" ")[1]; // e.g., "09:45:00"
         if (timePart > timeThreshold) {
           isLate = true;
         }
       }
 
-      if (isLate) {
-        return "Half Day"; // Late overrides Full Day
-      } else if (totalMinutes >= 500) {
-        return "Full Day";
-      } else if (totalMinutes >= 240) {
+      // Determine status based on thresholds
+      if (totalMinutes >= fullDayThreshold) {
+        return isLate ? "Half Day" : "Present"; // Late overrides Full Day
+      } else if (totalMinutes >= halfDayThreshold) {
         return "Half Day";
       } else {
         return "Absent";
@@ -2328,7 +2431,8 @@ const getAttendanceDaysByMonth = async (req, res) => {
     
     const updatedData = aggResult.map(entry => {
       const durationInHHMM = convertDuration(entry.Duration);
-      const attendanceStatus = getAttendanceStatus(entry.Duration, entry.InTime);
+      // Use database Status first, recalculate only if missing
+      const attendanceStatus = getAttendanceStatus(entry);
 
       return {
         ...entry,
@@ -3487,6 +3591,10 @@ const recalculateDuration = async (req, res) => {
           if (!lastOut || t.isAfter(lastOut)) lastOut = t;
         }
       }
+      // If there's a first IN but no OUT, set default punch out time to 18:30 PM
+      if (firstIn && !lastOut) {
+        lastOut = moment(firstIn).hour(18).minute(30).second(0);
+      }
       if (firstIn && lastOut) {
         if (lastOut.isBefore(firstIn)) lastOut.add(1, "day");
         const span = lastOut.diff(firstIn, "minutes");
@@ -3506,6 +3614,14 @@ const recalculateDuration = async (req, res) => {
           if (duration > 0) totalDuration += duration;
           lastInTime = null;
         }
+      }
+      // If there's an unmatched IN punch (no OUT), set default punch out time to 18:30 PM
+      if (lastInTime) {
+        const inTime = moment(lastInTime, "HH:mm");
+        const defaultOutTime = moment(inTime).hour(18).minute(30).second(0);
+        if (defaultOutTime.isBefore(inTime)) defaultOutTime.add(1, "day");
+        const duration = defaultOutTime.diff(inTime, "minutes");
+        if (duration > 0) totalDuration += duration;
       }
     }
 
@@ -4011,6 +4127,215 @@ const recalculateAttendanceStatus = async (req, res) => {
   }
 };
 
+/**
+ * Fix records with InTime but no OutTime by setting default checkout time to 18:30
+ */
+const fixMissingCheckoutTime = async (req, res) => {
+  try {
+    console.log("🔄 Starting fix for records with InTime but no OutTime...");
+    const moment = require('moment');
+    
+    // Fetch all employees with their shift times
+    const employeesData = await employeeModel.find(
+      {},
+      { employeeId: 1, shiftTime: 1, employeeCode: 1 }
+    );
+    
+    // Create shift map
+    const employeeShiftMap = new Map();
+    employeesData.forEach(emp => {
+      if (emp.employeeId && emp.shiftTime && emp.shiftTime.startAt && emp.shiftTime.endAt) {
+        const empIdStr = emp.employeeId.toString();
+        employeeShiftMap.set(empIdStr, {
+          startAt: emp.shiftTime.startAt,
+          endAt: emp.shiftTime.endAt
+        });
+        if (emp.employeeCode && emp.employeeCode.toString() !== empIdStr) {
+          employeeShiftMap.set(emp.employeeCode.toString(), {
+            startAt: emp.shiftTime.startAt,
+            endAt: emp.shiftTime.endAt
+          });
+        }
+      }
+    });
+    
+    // Helper function to check if employee has 10 to 6 shift
+    const is10to6Shift = (startAt, endAt) => {
+      const startAtStr = String(startAt || '').trim().toLowerCase();
+      const endAtStr = String(endAt || '').trim().toLowerCase();
+      
+      const startMatches = (
+        startAtStr === '10:00' || 
+        startAtStr === '10:00:00' ||
+        startAtStr === '10' ||
+        startAtStr.includes('10:00') ||
+        (startAtStr.includes('10') && (startAtStr.includes('am') || startAtStr.includes('a.m')))
+      );
+      
+      const endMatches = (
+        endAtStr === '18:00' || 
+        endAtStr === '18:00:00' ||
+        endAtStr === '6:00' ||
+        endAtStr === '6:00:00' ||
+        endAtStr === '18' ||
+        endAtStr === '6' ||
+        endAtStr.includes('18:00') ||
+        endAtStr.includes('6:00') ||
+        (endAtStr.includes('6') && (endAtStr.includes('pm') || endAtStr.includes('p.m'))) ||
+        (endAtStr.includes('18') && (endAtStr.includes('pm') || endAtStr.includes('p.m')))
+      );
+      
+      return startMatches && endMatches;
+    };
+    
+    // Helper function to get thresholds
+    const getShiftThresholds = (employeeId) => {
+      const shift = employeeShiftMap.get(employeeId?.toString());
+      if (shift && is10to6Shift(shift.startAt, shift.endAt)) {
+        return { halfDay: 220, fullDay: 450 };
+      }
+      return { halfDay: 240, fullDay: 500 };
+    };
+    
+    // Helper function to determine status
+    const determineStatus = (duration, thresholds) => {
+      const { halfDay, fullDay } = thresholds;
+      if (duration >= fullDay) {
+        return "Present";
+      } else if (duration >= halfDay) {
+        return "Half Day";
+      } else {
+        return "Absent";
+      }
+    };
+    
+    // Find all records with InTime but no OutTime (or empty/null OutTime)
+    const recordsToFix = await AttendanceLogModel.find({
+      $and: [
+        {
+          InTime: {
+            $exists: true,
+            $ne: null,
+            $ne: "",
+            $ne: "1900-01-01 00:00:00"
+          }
+        },
+        {
+          $or: [
+            { OutTime: { $exists: false } },
+            { OutTime: null },
+            { OutTime: "" },
+            { OutTime: "1900-01-01 00:00:00" }
+          ]
+        }
+      ]
+    });
+    
+    console.log(`📊 Found ${recordsToFix.length} records with InTime but no OutTime`);
+    
+    let updateCount = 0;
+    let skipCount = 0;
+    const bulkOps = [];
+    
+    for (const record of recordsToFix) {
+      const inTimeStr = String(record.InTime || "").trim();
+      
+      // Skip if InTime is invalid
+      if (!inTimeStr || inTimeStr === "" || inTimeStr.includes("1900-01-01") || inTimeStr === "null") {
+        skipCount++;
+        continue;
+      }
+      
+      // Parse InTime
+      let inTime = moment(inTimeStr, 'YYYY-MM-DD HH:mm:ss');
+      if (!inTime.isValid()) {
+        // Try alternative format
+        const inTimeAlt = moment(inTimeStr);
+        if (!inTimeAlt.isValid()) {
+          console.warn(`⚠️ Invalid InTime format for record ${record._id}: ${inTimeStr}`);
+          skipCount++;
+          continue;
+        }
+        inTime = inTimeAlt;
+      }
+      
+      // Set default OutTime to 18:30 on the same date as InTime
+      const defaultOutTime = inTime.clone().hour(18).minute(30).second(0);
+      const defaultOutTimeStr = defaultOutTime.format('YYYY-MM-DD HH:mm:ss');
+      
+      // Calculate duration in minutes
+      const duration = defaultOutTime.diff(inTime, 'minutes');
+      
+      if (duration <= 0) {
+        console.warn(`⚠️ Invalid duration for record ${record._id}: ${duration} minutes`);
+        skipCount++;
+        continue;
+      }
+      
+      // Get employee ID
+      const employeeId = record.EmployeeCode?.toString() || record.EmployeeId?.toString();
+      if (!employeeId) {
+        skipCount++;
+        continue;
+      }
+      
+      // Get shift thresholds and determine status
+      const thresholds = getShiftThresholds(employeeId);
+      const { halfDay, fullDay } = thresholds;
+      const newStatus = determineStatus(duration, thresholds);
+      const isPresent = duration >= halfDay ? 1 : 0;
+      const isAbsent = duration < halfDay ? 1 : 0;
+      const statusCode = duration >= fullDay ? "P" : duration >= halfDay ? "HD" : "A";
+      
+      // Update record
+      bulkOps.push({
+        updateOne: {
+          filter: { _id: record._id },
+          update: {
+            $set: {
+              OutTime: defaultOutTimeStr,
+              Duration: duration,
+              Status: newStatus,
+              Present: isPresent,
+              Absent: isAbsent,
+              StatusCode: statusCode
+            }
+          }
+        }
+      });
+      
+      updateCount++;
+    }
+    
+    // Execute bulk update
+    if (bulkOps.length > 0) {
+      await AttendanceLogModel.bulkWrite(bulkOps);
+      console.log(`✅ Updated ${updateCount} records with default checkout time (18:30)`);
+    }
+    
+    console.log(`📈 Summary: Updated ${updateCount}, Skipped ${skipCount}, Total ${recordsToFix.length}`);
+    
+    res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Fixed records with missing checkout time successfully",
+      data: {
+        totalRecords: recordsToFix.length,
+        updated: updateCount,
+        skipped: skipCount
+      }
+    });
+  } catch (error) {
+    console.error("❌ Error fixing missing checkout time:", error);
+    res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to fix missing checkout time",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createAttendanceLogForOutDuty,
   punchOutForOutDuty,
@@ -4034,5 +4359,6 @@ module.exports = {
   triggerMergeAllExistingData,
   getMergeResults,
   triggerAttendanceMerge,
-  recalculateAttendanceStatus
+  recalculateAttendanceStatus,
+  fixMissingCheckoutTime
 };

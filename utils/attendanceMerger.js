@@ -352,6 +352,12 @@ async function findCommonAttendanceAndUpdate() {
       }
     }
 
+    // If there's a first IN but no OUT, set default punch out time to 18:30 PM
+    if (firstInTime && !lastOutTime) {
+      const attendanceDate = moment(outDate);
+      lastOutTime = moment(attendanceDate).hour(18).minute(30).second(0);
+    }
+    
     if (firstInTime && lastOutTime && lastOutTime.isAfter(firstInTime)) {
       effectiveMinutes = lastOutTime.diff(firstInTime, 'minutes');
       inTimes.push(firstInTime);
@@ -374,6 +380,18 @@ async function findCommonAttendanceAndUpdate() {
         lastInTime = null; // Reset for next pair
       }
     }
+    
+    // If there's an unmatched IN punch (no OUT), set default punch out time to 18:30 PM
+    if (lastInTime) {
+      const attendanceDate = moment(outDate);
+      const defaultOutTime = moment(attendanceDate).hour(18).minute(30).second(0);
+      const duration = defaultOutTime.diff(lastInTime, 'minutes');
+      if (duration > 0) {
+        effectiveMinutes += duration;
+        inTimes.push(lastInTime);
+        outTimes.push(defaultOutTime);
+      }
+    }
   }
 
   // Step 5: Determine earliest IN and latest OUT
@@ -393,6 +411,14 @@ async function findCommonAttendanceAndUpdate() {
     const outOutTime = String(outLog.OutTime).trim();
     if (outOutTime && !outOutTime.includes('1900-01-01') && outOutTime !== '' && outOutTime !== 'null') {
       latestOut = outOutTime;
+    }
+  }
+  
+  // If there's an InTime but no OutTime, set default punch out time to 18:30 PM
+  if (earliestIn && !latestOut) {
+    const inDate = moment(earliestIn, 'YYYY-MM-DD HH:mm:ss');
+    if (inDate.isValid()) {
+      latestOut = inDate.clone().hour(18).minute(30).second(0).format('YYYY-MM-DD HH:mm:ss');
     }
   }
   
