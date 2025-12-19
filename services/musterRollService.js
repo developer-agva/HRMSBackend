@@ -424,4 +424,6 @@ const getMusterRollData = async (year, month, employeeType = "all") => {
 
 module.exports = {
   getMusterRollData,
+  calculateAttendanceSummary,
+  mapStatusCode,
 };

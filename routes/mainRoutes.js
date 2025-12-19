@@ -23,7 +23,14 @@ const {
     getMergeResults,
     triggerAttendanceMerge,
     recalculateAttendanceStatus,
-    fixMissingCheckoutTime
+    fixMissingCheckoutTime,
+    generateSalarySheets,
+    getAllSalarySheets,
+    getSalarySheetById,
+    getSalarySheetsByEmployee,
+    getSalarySheetsByMonth,
+    updateSalarySheet,
+    deleteSalarySheet
 } = require('../controllers/mainController');
 const { getMusterRoll } = require('../controllers/musterRollController');
 const authMiddleware = require('../middlewares/authMiddleware');
@@ -82,6 +89,15 @@ router.get('/merge-results', getMergeResults);
 router.post('/merge-attendance-from-out-duty', triggerAttendanceMerge);
 router.post('/recalculate-attendance-status', recalculateAttendanceStatus);
 router.post('/fix-missing-checkout-time', fixMissingCheckoutTime);
+
+// Salary Sheet Generation
+router.post('/generate-salary-sheets', authMiddleware, generateSalarySheets);
+router.get('/salary-sheets', authMiddleware, getAllSalarySheets);
+router.get('/salary-sheets/:id', authMiddleware, getSalarySheetById);
+router.get('/salary-sheets/employee/:employeeCode', authMiddleware, getSalarySheetsByEmployee);
+router.get('/salary-sheets/month/:year/:month', authMiddleware, getSalarySheetsByMonth);
+router.put('/salary-sheets/:id', authMiddleware, updateSalarySheet);
+router.delete('/salary-sheets/:id', authMiddleware, deleteSalarySheet);
 
 // router.get('/punchTime',getPunchTimeDetails);  // temp-used
 

@@ -3963,7 +3963,38 @@ const getMergeResults = async (req, res) => {
 // Function to recalculate Status for all attendance records based on Duration and shift-specific thresholds
 const recalculateAttendanceStatus = async (req, res) => {
   try {
-    console.log("🔄 Starting status recalculation for all attendance records...");
+    // Extract date range from request body (optional)
+    const { startDate, endDate } = req.body || {};
+    
+    // Build date filter if dates are provided
+    let dateFilter = {};
+    if (startDate || endDate) {
+      dateFilter.AttendanceDate = {};
+      if (startDate) {
+        // Set start of day for startDate
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        dateFilter.AttendanceDate.$gte = start;
+        console.log(`📅 Filtering from date: ${startDate}`);
+      }
+      if (endDate) {
+        // Set end of day for endDate
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        dateFilter.AttendanceDate.$lte = end;
+        console.log(`📅 Filtering to date: ${endDate}`);
+      }
+    }
+    
+    const dateRangeText = startDate && endDate 
+      ? ` for date range ${startDate} to ${endDate}`
+      : startDate 
+        ? ` from ${startDate}`
+        : endDate 
+          ? ` until ${endDate}`
+          : '';
+    
+    console.log(`🔄 Starting status recalculation for all attendance records${dateRangeText}...`);
     
     // Fetch all employees with their shift times (including inactive to handle historical records)
     const employeesData = await employeeModel.find(
@@ -4040,10 +4071,16 @@ const recalculateAttendanceStatus = async (req, res) => {
       }
     };
     
-    // Fetch all attendance records with Duration > 0
+    // Build query filter with date range if provided
+    const queryFilter = {
+      Duration: { $gt: 0 },
+      ...dateFilter
+    };
+    
+    // Fetch attendance records with Duration > 0 and optional date filter
     const attendanceRecords = await AttendanceLogModel.find(
-      { Duration: { $gt: 0 } },
-      { EmployeeCode: 1, Duration: 1, Status: 1, Present: 1, Absent: 1, StatusCode: 1 }
+      queryFilter,
+      { EmployeeCode: 1, Duration: 1, Status: 1, Present: 1, Absent: 1, StatusCode: 1, AttendanceDate: 1 }
     );
     
     console.log(`📊 Found ${attendanceRecords.length} attendance records to process`);
@@ -4336,6 +4373,390 @@ const fixMissingCheckoutTime = async (req, res) => {
   }
 };
 
+/**
+ * Generate monthly salary sheets for all employees
+ * POST /api/generate-salary-sheets
+ * Body: { year: Number, month: Number, generated_by: String (optional) }
+ */
+const generateSalarySheets = async (req, res) => {
+  try {
+    const { year, month, generated_by } = req.body;
+
+    if (!year || !month) {
+      return res.status(400).json({
+        statusCode: 400,
+        statusValue: "FAIL",
+        message: "Year and month are required",
+      });
+    }
+
+    console.log(`🔄 Starting salary sheet generation for ${month}/${year}...`);
+
+    const { generateSalarySheets: generateSheets } = require("../services/salaryCalculationService");
+    const result = await generateSheets(year, month, generated_by || "system");
+
+    if (!result.success) {
+      return res.status(500).json({
+        statusCode: 500,
+        statusValue: "ERROR",
+        message: "Failed to generate salary sheets",
+        error: result.error,
+      });
+    }
+
+    console.log(`✅ Salary sheet generation completed: ${result.processed} processed, ${result.skipped} skipped`);
+
+    return res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Salary sheets generated successfully",
+      data: {
+        totalEmployees: result.totalEmployees,
+        processed: result.processed,
+        skipped: result.skipped,
+        errors: result.errors,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error generating salary sheets:", error);
+    return res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to generate salary sheets",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get all salary sheets with filtering and pagination
+ */
+const getAllSalarySheets = async (req, res) => {
+  try {
+    const SalarySheet = require("../models/salarySheetModel");
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const month = req.query.month ? parseInt(req.query.month) : null;
+    const year = req.query.year ? parseInt(req.query.year) : null;
+    const employee_code = req.query.employee_code || null;
+    const search = req.query.search || "";
+
+    const filter = {};
+    if (month) filter.month = month;
+    if (year) filter.year = year;
+    if (employee_code) filter.employee_code = employee_code;
+    if (search) {
+      filter.$or = [
+        { employee_code: { $regex: new RegExp(search, "i") } },
+      ];
+    }
+
+    const decoded = req.employee;
+    if (decoded.role === "Employee" || decoded.role === "Manager") {
+      filter.employee_code = decoded.employeeId;
+    }
+
+    const [salarySheets, totalRecords] = await Promise.all([
+      SalarySheet.find(filter)
+        .populate("employee_id", "employeeName employeeCode designation")
+        .sort({ year: -1, month: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      SalarySheet.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Salary sheets fetched successfully",
+      data: salarySheets,
+      pagination: {
+        totalRecords,
+        currentPage: page,
+        totalPages: Math.ceil(totalRecords / limit),
+        limit,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error fetching salary sheets:", error);
+    return res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to fetch salary sheets",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get salary sheet by ID
+ */
+const getSalarySheetById = async (req, res) => {
+  try {
+    const SalarySheet = require("../models/salarySheetModel");
+    const { id } = req.params;
+
+    const salarySheet = await SalarySheet.findById(id)
+      .populate("employee_id", "employeeName employeeCode designation email contactNo")
+      .lean();
+
+    if (!salarySheet) {
+      return res.status(404).json({
+        statusCode: 404,
+        statusValue: "FAIL",
+        message: "Salary sheet not found",
+      });
+    }
+
+    const decoded = req.employee;
+    if ((decoded.role === "Employee" || decoded.role === "Manager") && 
+        salarySheet.employee_code !== decoded.employeeId) {
+      return res.status(403).json({
+        statusCode: 403,
+        statusValue: "FAIL",
+        message: "You are not authorized to access this salary sheet",
+      });
+    }
+
+    return res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Salary sheet fetched successfully",
+      data: salarySheet,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching salary sheet:", error);
+    return res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to fetch salary sheet",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get salary sheets by employee code
+ */
+const getSalarySheetsByEmployee = async (req, res) => {
+  try {
+    const SalarySheet = require("../models/salarySheetModel");
+    const { employeeCode } = req.params;
+    const month = req.query.month ? parseInt(req.query.month) : null;
+    const year = req.query.year ? parseInt(req.query.year) : null;
+
+    const decoded = req.employee;
+    if ((decoded.role === "Employee" || decoded.role === "Manager") && 
+        employeeCode !== decoded.employeeId) {
+      return res.status(403).json({
+        statusCode: 403,
+        statusValue: "FAIL",
+        message: "You are not authorized to access this employee's salary sheets",
+      });
+    }
+
+    const filter = { employee_code: employeeCode };
+    if (month) filter.month = month;
+    if (year) filter.year = year;
+
+    const salarySheets = await SalarySheet.find(filter)
+      .populate("employee_id", "employeeName employeeCode designation")
+      .sort({ year: -1, month: -1 })
+      .lean();
+
+    return res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Salary sheets fetched successfully",
+      data: salarySheets,
+      count: salarySheets.length,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching salary sheets by employee:", error);
+    return res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to fetch salary sheets",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get salary sheets by month and year
+ */
+const getSalarySheetsByMonth = async (req, res) => {
+  try {
+    const SalarySheet = require("../models/salarySheetModel");
+    const { year, month } = req.params;
+    const yearNum = parseInt(year);
+    const monthNum = parseInt(month);
+
+    if (isNaN(yearNum) || isNaN(monthNum) || monthNum < 1 || monthNum > 12) {
+      return res.status(400).json({
+        statusCode: 400,
+        statusValue: "FAIL",
+        message: "Invalid year or month",
+      });
+    }
+
+    const filter = { year: yearNum, month: monthNum };
+    const decoded = req.employee;
+    if (decoded.role === "Employee" || decoded.role === "Manager") {
+      filter.employee_code = decoded.employeeId;
+    }
+
+    const salarySheets = await SalarySheet.find(filter)
+      .populate("employee_id", "employeeName employeeCode designation")
+      .sort({ employee_code: 1 })
+      .lean();
+
+    return res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Salary sheets fetched successfully",
+      data: salarySheets,
+      count: salarySheets.length,
+      month: monthNum,
+      year: yearNum,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching salary sheets by month:", error);
+    return res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to fetch salary sheets",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Update salary sheet
+ */
+const updateSalarySheet = async (req, res) => {
+  try {
+    const SalarySheet = require("../models/salarySheetModel");
+    const { id } = req.params;
+    const { is_locked, deductions } = req.body;
+
+    const salarySheet = await SalarySheet.findById(id);
+    if (!salarySheet) {
+      return res.status(404).json({
+        statusCode: 404,
+        statusValue: "FAIL",
+        message: "Salary sheet not found",
+      });
+    }
+
+    const decoded = req.employee;
+    if (decoded.role === "Employee" || decoded.role === "Manager") {
+      return res.status(403).json({
+        statusCode: 403,
+        statusValue: "FAIL",
+        message: "You are not authorized to update salary sheets",
+      });
+    }
+
+    if (salarySheet.is_locked && deductions) {
+      return res.status(400).json({
+        statusCode: 400,
+        statusValue: "FAIL",
+        message: "Cannot update deductions for a locked salary sheet",
+      });
+    }
+
+    if (typeof is_locked === "boolean") {
+      salarySheet.is_locked = is_locked;
+    }
+
+    if (deductions && !salarySheet.is_locked) {
+      const totalDeductions = Object.values(deductions).reduce((sum, val) => {
+        return sum + (typeof val === "number" ? val : parseFloat(val) || 0);
+      }, 0);
+
+      salarySheet.deductions = {
+        ...salarySheet.deductions,
+        ...deductions,
+        total_deductions: Math.round(totalDeductions * 100) / 100,
+      };
+
+      salarySheet.net_pay = Math.round((salarySheet.adjusted_gross - totalDeductions) * 100) / 100;
+    }
+
+    await salarySheet.save();
+
+    return res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Salary sheet updated successfully",
+      data: salarySheet,
+    });
+  } catch (error) {
+    console.error("❌ Error updating salary sheet:", error);
+    return res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to update salary sheet",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Delete salary sheet
+ */
+const deleteSalarySheet = async (req, res) => {
+  try {
+    const SalarySheet = require("../models/salarySheetModel");
+    const { id } = req.params;
+
+    const salarySheet = await SalarySheet.findById(id);
+    if (!salarySheet) {
+      return res.status(404).json({
+        statusCode: 404,
+        statusValue: "FAIL",
+        message: "Salary sheet not found",
+      });
+    }
+
+    const decoded = req.employee;
+    if (decoded.role === "Employee" || decoded.role === "Manager") {
+      return res.status(403).json({
+        statusCode: 403,
+        statusValue: "FAIL",
+        message: "You are not authorized to delete salary sheets",
+      });
+    }
+
+    if (salarySheet.is_locked) {
+      return res.status(400).json({
+        statusCode: 400,
+        statusValue: "FAIL",
+        message: "Cannot delete a locked salary sheet",
+      });
+    }
+
+    await SalarySheet.findByIdAndDelete(id);
+
+    return res.status(200).json({
+      statusCode: 200,
+      statusValue: "SUCCESS",
+      message: "Salary sheet deleted successfully",
+    });
+  } catch (error) {
+    console.error("❌ Error deleting salary sheet:", error);
+    return res.status(500).json({
+      statusCode: 500,
+      statusValue: "ERROR",
+      message: "Failed to delete salary sheet",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createAttendanceLogForOutDuty,
   punchOutForOutDuty,
@@ -4360,5 +4781,12 @@ module.exports = {
   getMergeResults,
   triggerAttendanceMerge,
   recalculateAttendanceStatus,
-  fixMissingCheckoutTime
+  fixMissingCheckoutTime,
+  generateSalarySheets,
+  getAllSalarySheets,
+  getSalarySheetById,
+  getSalarySheetsByEmployee,
+  getSalarySheetsByMonth,
+  updateSalarySheet,
+  deleteSalarySheet
 };
