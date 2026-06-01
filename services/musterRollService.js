@@ -24,8 +24,9 @@ const formatPaySlipMonth = (year, month) => {
  * Map StatusCode to Muster Roll status
  * P = Present, HD = Half Day, A = Absent, H = Holiday, WO = Week Off
  * CL = Casual Leave, EL = Earned Leave, ML = Medical Leave
+ * If StatusCode is missing, calculate from Duration (halfDay = 240, fullDay = 500)
  */
-const mapStatusCode = (statusCode, isHoliday, isWeeklyOff, leaveType) => {
+const mapStatusCode = (statusCode, isHoliday, isWeeklyOff, leaveType, duration = null) => {
   if (isHoliday) return "H";
   if (isWeeklyOff) return "WO";
   
@@ -42,6 +43,14 @@ const mapStatusCode = (statusCode, isHoliday, isWeeklyOff, leaveType) => {
   if (code === "P") return "P";
   if (code === "HD") return "HD";
   if (code === "A") return "A";
+  
+  // If StatusCode is missing or invalid, calculate from Duration
+  if (!statusCode && duration !== null && duration !== undefined) {
+    const durationNum = parseInt(duration) || 0;
+    if (durationNum >= 500) return "P"; // Full day (8+ hours)
+    if (durationNum >= 240) return "HD"; // Half day (4+ hours)
+    if (durationNum > 0) return "HD"; // Any duration > 0 but < 4 hours is half day
+  }
   
   return "A"; // Default to Absent
 };
@@ -71,7 +80,8 @@ const calculateAttendanceSummary = (attendanceRecords, monthDays, holidaysMap, l
       record.StatusCode,
       isHoliday,
       isWeeklyOff,
-      leaveInfo?.leaveType
+      leaveInfo?.leaveType,
+      record.Duration
     );
 
     switch (status) {
@@ -144,7 +154,8 @@ const buildAttendanceDaysMap = (attendanceRecords, monthDays, holidaysMap, leave
       record.StatusCode,
       isHoliday,
       isWeeklyOff,
-      leaveInfo?.leaveType
+      leaveInfo?.leaveType,
+      record.Duration
     );
 
     attendanceDays[String(day)] = status;
@@ -220,6 +231,7 @@ const getMusterRollData = async (year, month, employeeType = "all") => {
     });
 
     // Step 2: Fetch attendance records for the month (single optimized query)
+    // Include Duration to calculate status if StatusCode is missing (for merged records)
     const attendanceRecords = await AttendanceLogModel.find(
       {
         EmployeeCode: { $in: employeeCodes },
@@ -232,6 +244,7 @@ const getMusterRollData = async (year, month, employeeType = "all") => {
         EmployeeCode: 1,
         AttendanceDate: 1,
         StatusCode: 1,
+        Duration: 1,
         WeeklyOff: 1,
         Holiday: 1,
       }

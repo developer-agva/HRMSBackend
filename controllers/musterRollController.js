@@ -11,10 +11,7 @@ const { getMusterRollData } = require("../services/musterRollService");
  */
 const getMusterRoll = async (req, res) => {
   try {
-    // Read from both req.body and req.query (query as fallback for backward compatibility)
-    const year = req.body.year || req.query.year;
-    const month = req.body.month || req.query.month;
-    const type = req.body.type || req.query.type || "all";
+    const { year, month, type = "all" } = req.query;
 
     // Validate required parameters
     if (!year || !month) {

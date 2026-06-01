@@ -552,22 +552,33 @@ const approvedPendingLeaves = async (req, res) => {
 
 const generateUninformedLeave = async (req, res) => {
   try {
+    console.log("🔄 Starting uninformed leave generation...");
 
     // Extract query parameters
-    const dateTo = req.query.dateTo ? new Date(req.query.dateTo) : null;
-    const dateFrom = req.query.dateFrom ? new Date(req.query.dateFrom) : null;
+    let dateTo = req.query.dateTo ? new Date(req.query.dateTo) : null;
+    let dateFrom = req.query.dateFrom ? new Date(req.query.dateFrom) : null;
+
+    // If no date range provided, default to current month to avoid processing all records
+    if (!dateFrom || !dateTo) {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth();
+      dateFrom = new Date(currentYear, currentMonth, 1);
+      dateTo = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
+      console.log(`📅 No date range provided, defaulting to current month: ${dateFrom.toISOString().split('T')[0]} to ${dateTo.toISOString().split('T')[0]}`);
+    }
 
     // Build the filter object for MongoDB query
-    let filter = {};
-
-    // Apply date range filter
-    if (dateFrom && dateTo) {
-      filter.AttendanceDate = {
+    const filter = {
+      AttendanceDate: {
         $gte: dateFrom,
         $lte: dateTo
-      };
-    }
+      }
+    };
+    
+    console.log(`📊 Fetching attendance records from ${dateFrom.toISOString().split('T')[0]} to ${dateTo.toISOString().split('T')[0]}...`);
     // Fetch attendance records - include all fields needed for presence validation
+    console.log(`📊 Fetching attendance records...`);
     const dataResult = await AttendanceLogModel.find(filter, {
       AttendanceDate: 1, 
       EmployeeCode: 1, 
@@ -579,19 +590,20 @@ const generateUninformedLeave = async (req, res) => {
       Present: 1,
       Absent: 1,
       PunchRecords: 1
-    });
+    }).lean();
+    
+    console.log(`✅ Found ${dataResult.length} attendance records`);
 
     // Also fetch out duty records for the same date range
     // These may have attendance data even if main attendance log doesn't
-    // IMPORTANT: This fetches out duty records for ALL employees in the date range
-    const outDutyFilter = {};
-    if (dateFrom && dateTo) {
-      outDutyFilter.AttendanceDate = {
+    const outDutyFilter = {
+      AttendanceDate: {
         $gte: dateFrom,
         $lte: dateTo
-      };
-    }
+      }
+    };
 
+    console.log(`📊 Fetching out duty records...`);
     const outDutyRecords = await attendanceLogModelForOutDuty.find(outDutyFilter, {
       employeeId: 1,
       AttendanceDate: 1,
@@ -600,7 +612,9 @@ const generateUninformedLeave = async (req, res) => {
       PunchRecords: 1,
       Duration: 1,
       Status: 1
-    });
+    }).lean();
+    
+    console.log(`✅ Found ${outDutyRecords.length} out duty records`);
 
     // Create a map of out duty records by employeeId + date for quick lookup
     // This map contains out duty records for ALL employees, not just specific ones
@@ -753,10 +767,13 @@ const generateUninformedLeave = async (req, res) => {
 
     // Fetch ALL leave history (Pending and Approved) - including uninformedLeave
     // This ensures we don't create uninformed leave if ANY leave already exists for that day
+    console.log(`📊 Fetching leave history...`);
     const leaveData = await leaveTakenHistoryModel.find(
       { $or: [{ status: "Pending" }, { status: "Approved" }] },
       { employeeId: 1, leaveType: 1, leaveStartDate: 1, leaveEndDate: 1, status: 1 }
-    );
+    ).lean();
+    
+    console.log(`✅ Found ${leaveData.length} existing leaves`);
     //  console.log(uniqueRecords) 
     // Filter records where leave does NOT match - exclude if ANY leave exists for that date
     const notMatchingLeaves = uniqueRecords
@@ -800,7 +817,7 @@ const generateUninformedLeave = async (req, res) => {
         const thresholds = getShiftThresholds(attendance.EmployeeCode);
         
         return {
-          ...attendance.toObject(),
+          ...attendance, // attendance is already a plain object from .lean()
           managerId: employeeData.managerId || null,
           workingDays: employeeData.workingDays || null,
           outDutyRecord: outDutyRecord || null, // Attach out duty record if exists (for ALL employees)
@@ -811,15 +828,9 @@ const generateUninformedLeave = async (req, res) => {
 
     // Filter based on working hours and manager availability
     // IMPORTANT: Only create uninformed leave for Absent records, NOT for Present records
-    // Also exclude contractual employees from uninformed leave generation
+    console.log(`📊 Filtering ${notMatchingLeaves.length} records for uninformed leave creation...`);
     const filteredLeaves = notMatchingLeaves.filter(attendance => {
       if (attendance.managerId === null) return false;
-
-      // Exclude contractual employees from uninformed leave generation
-      const employmentType = employeeEmploymentTypeMap.get(attendance.EmployeeCode?.toString()) || "Permanent";
-      if (employmentType && employmentType.trim().toLowerCase() === "contractual") {
-        return false; // Skip contractual employees - they should not get uninformed leaves
-      }
 
       // Get shift-specific thresholds for this employee FIRST
       const thresholds = attendance.shiftThresholds || { halfDay: 240, fullDay: 500 };
@@ -1281,6 +1292,7 @@ const generateUninformedLeave = async (req, res) => {
     const dateTime = getIndiaCurrentDateTime()
 
     // Create uninformed leave records
+    console.log(`📊 Creating leave records for ${filteredData.length} attendance records...`);
     const leaveRecords = filteredData.map(attendance => {
       // Check for null AttendanceDate before processing
       if (!attendance.AttendanceDate) {
@@ -1329,14 +1341,21 @@ const generateUninformedLeave = async (req, res) => {
   
     // Insert into MongoDB
     if (leaveRecords.length > 0) {
+      console.log(`💾 Inserting ${leaveRecords.length} uninformed leave records...`);
       await leaveTakenHistoryModel.insertMany(leaveRecords);
+      console.log(`✅ Successfully inserted ${leaveRecords.length} uninformed leave records`);
+    } else {
+      console.log(`ℹ️  No uninformed leave records to insert`);
     }
 
     // After insertion, fetch ALL leaves again to check for overlaps
+    console.log(`📊 Fetching all leaves for cleanup check...`);
     const updatedLeaves = await leaveTakenHistoryModel.find(
       { $or: [{ status: "Pending" }, { status: "Approved" }] },
       { employeeId: 1, leaveType: 1, leaveStartDate: 1, leaveEndDate: 1, status: 1 }
-    );
+    ).lean();
+    
+    console.log(`✅ Found ${updatedLeaves.length} total leaves for cleanup check`);
 
     const allLeavesMap = new Map(); // Map to store ALL leave types (not just non-uninformedLeave)
     const uninformedLeaveMap = new Map();
@@ -1369,23 +1388,8 @@ const generateUninformedLeave = async (req, res) => {
 
     // Step 2: Identify uninformedLeave records to delete
     // Delete if they overlap with ANY other leave type (including other uninformedLeave)
-    // Also delete uninformed leaves for contractual employees
     uninformedLeaveMap.forEach((uninformedLeaves, employeeId) => {
       const allLeavesForEmployee = allLeavesMap.get(employeeId) || [];
-      
-      // Check if employee is contractual - if so, delete all their uninformed leaves
-      const employmentType = employeeEmploymentTypeMap.get(employeeId) || "Permanent";
-      const isContractual = employmentType && employmentType.trim().toLowerCase() === "contractual";
-      
-      if (isContractual) {
-        // Delete all uninformed leaves for contractual employees
-        uninformedLeaves.forEach(uninformedLeave => {
-          if (!leavesToDelete.includes(uninformedLeave._id)) {
-            leavesToDelete.push(uninformedLeave._id);
-          }
-        });
-        return; // Skip further processing for contractual employees
-      }
 
       // Sort uninformedLeave records by date to handle duplicates
       uninformedLeaves.sort((a, b) => a.startDate - b.startDate);
@@ -1516,22 +1520,31 @@ const generateUninformedLeave = async (req, res) => {
     
     // Step 4: Delete the identified uninformedLeave records
     if (leavesToDelete.length > 0) {
+      console.log(`🗑️  Deleting ${leavesToDelete.length} overlapping/unnecessary uninformedLeave records...`);
       await leaveTakenHistoryModel.deleteMany({ _id: { $in: leavesToDelete } });
-      console.log(`Deleted ${leavesToDelete.length} uninformedLeave records (including ${leavesToDelete.length - (leavesToDelete.length - fullDayAttendanceSet.size)} for full-day attendance).`);
+      console.log(`✅ Deleted ${leavesToDelete.length} uninformedLeave records`);
     } else {
-      console.log("No uninformedLeave records to delete.");
+      console.log("ℹ️  No uninformedLeave records to delete.");
     }
      
-    // check and delete uninformed leave of trackolap data
-    deleteUninformedLeaves();
-    generateUninformedForSales();
+    // check and delete uninformed leave of trackolap data (run in background)
+    console.log(`🔄 Running trackolap cleanup in background...`);
+    deleteUninformedLeaves().catch(err => console.error("Error in deleteUninformedLeaves:", err));
+    generateUninformedForSales().catch(err => console.error("Error in generateUninformedForSales:", err));
 
+    console.log(`✅ Uninformed leave generation completed successfully`);
     return res.status(200).json({
       statusCode: 200,
       statusValue: "SUCCESS",
       message: "Attendance records processed successfully.",
-      data: leaveRecords,
-      // data2: trackolapData
+      data: {
+        recordsCreated: leaveRecords.length,
+        recordsDeleted: leavesToDelete.length,
+        dateRange: {
+          from: dateFrom.toISOString().split('T')[0],
+          to: dateTo.toISOString().split('T')[0]
+        }
+      }
     });
   } catch (err) {
     console.error("Error fetching attendance logs:", err);

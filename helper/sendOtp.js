@@ -11,8 +11,8 @@ const sendOtp = async function sendOtp(to, otp) {
     const tranEmailApi = new Sib.TransactionalEmailsApi();
 
     const sender = {
-      email: 'shivprakash@agvahealthtech.com',
-      name: 'HRMS - AgVa Health Care',
+      email: 'developer@agvahealthtech.com',
+      name: '  D&D Healthcare',
     }
 
     const receivers = [
@@ -169,7 +169,7 @@ const sendOtp = async function sendOtp(to, otp) {
                                 style="font-family: sans-serif; font-size: 14px; font-weight: normal; margin: 0; margin-bottom: 15px;">
                                <img src="https://i.ibb.co/xfngMWf/lgnewsmall.png" style='width: 2rem;'>
                               </p>
-                              <h2>Hello From AgVa Team!</h2>  
+                              <h2>Hello From D&D Healthcare Team!</h2>  
                               <h5
                                 style="font-family: sans-serif; font-size: 14px;  margin: 0; margin-bottom: 15px;">
                                 Hi, ${to}</h5>
@@ -178,7 +178,7 @@ const sendOtp = async function sendOtp(to, otp) {
                                 We hope you're having a lovely day.</h5>
                               <h5
                                 style="font-family: sans-serif; font-size: 14px; font-weight: normal; margin: 0; margin-bottom: 15px;">
-                                Thank you for choosing AgVa HRMS Webapps. Use the following OTP to complete your verification email procedures. OTP is valid for 5 minutes .
+                                Thank you for choosing D&D Healthcare. Use the following OTP to complete your verification email procedures. OTP is valid for 5 minutes .
                                 <br>
                               <h2 style="background: #00466a;margin: 0 auto;width: max-content;padding: 0 10px;color: #fff;border-radius: 4px;">
                                 ${otp}</h2>
@@ -212,7 +212,7 @@ const sendOtp = async function sendOtp(to, otp) {
                                 style="display: flex;align-items: center; justify-content: center; font-family: sans-serif; font-size: 10px; font-weight: normal; margin: 0; margin: 15px 0px;text-align: center;">
                                 <img src="https://i.ibb.co/yBXyHN4/agva-healthcare-logo.png" style="width: 10rem;"> </h5>
                                 <h5 style="font-family: sans-serif; font-size: 10px; font-weight: normal; margin: 0; margin-bottom: 15px;text-align: center;">
-                                ©Copyright 2023 A-1 Sector 83 Agva Healthcare Pvt Ltd.</h5>
+                                ©Copyright 2023 D&D Healthcare.</h5>
                             </td>
                           </tr>
                         </table>
@@ -250,8 +250,8 @@ const sendEmailLink = async function sendEmailLink(to, link) {
     const tranEmailApi = new Sib.TransactionalEmailsApi();
 
     const sender = {
-      email: 'shivprakash@agvahealthtech.com',
-      name: 'AgVa Health Care',
+      email: 'developer@agvahealthtech.com',
+      name: '  D&D Healthcare',
     }
 
     const receivers = [
@@ -411,7 +411,7 @@ const sendEmailLink = async function sendEmailLink(to, link) {
                                       style="font-family: sans-serif; font-size: 14px; font-weight: normal; margin: 0; margin-bottom: 15px;">
                                      <img src="https://i.ibb.co/xfngMWf/lgnewsmall.png" style='width: 2rem;'>
                                     </p>
-                                    <h2>Hello From AgVa Team!</h2>
+                                    <h2>Hello From D&D Healthcare Team!</h2>
                                     <p
                                       style="font-family: sans-serif; font-size: 14px;  margin: 0; margin-bottom: 15px;">
                                       Hii, ${to}</p>
@@ -454,7 +454,7 @@ const sendEmailLink = async function sendEmailLink(to, link) {
                                       <img src="https://i.ibb.co/yBXyHN4/agva-healthcare-logo.png" style="width: 10rem;"> </p>
                                       <p class='addressPara'
                                       >
-                                      ©Copyright 2023 A-1 Sector 83 Agva Healthcare Pvt Ltd.</p>
+                                      ©Copyright 2023 D&D Healthcare.</p>
                                   </td>
                                 </tr>
                               </table>
@@ -493,8 +493,8 @@ const sendPrintFileLink = async function sendPrintFileLink(to, link) {
     const tranEmailApi = new Sib.TransactionalEmailsApi();
 
     const sender = {
-      email: 'shivprakash@agvahealthtech.com',
-      name: 'AgVa Health Care',
+      email: 'developer@agvahealthtech.com',
+      name: '  D&D Healthcare',
     }
 
     const receivers = [
@@ -655,7 +655,7 @@ const sendPrintFileLink = async function sendPrintFileLink(to, link) {
                                       style="font-family: sans-serif; font-size: 14px; font-weight: normal; margin: 0; margin-bottom: 15px;">
                                      <img src="https://i.ibb.co/xfngMWf/lgnewsmall.png" style='width: 2rem;'>
                                     </p>
-                                    <h2>Hello, From AgVa Team!</h2>
+                                    <h2>Hello, From D&D Healthcare Team!</h2>
                                     <p
                                       style="font-family: sans-serif; font-size: 14px;  margin: 0; margin-bottom: 15px;">
                                       Dear ${to},</p>
@@ -698,7 +698,7 @@ const sendPrintFileLink = async function sendPrintFileLink(to, link) {
                                       <img src="https://i.ibb.co/yBXyHN4/agva-healthcare-logo.png" style="width: 10rem;"> </p>
                                       <p class='addressPara'
                                       >
-                                      ©Copyright 2023 A-1 Sector 83 Agva Healthcare Pvt Ltd.</p>
+                                      ©Copyright 2023 D&D Healthcare.</p>
                                   </td>
                                 </tr>
                               </table>
